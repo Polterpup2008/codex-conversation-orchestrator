@@ -9,7 +9,16 @@
 - Existing ChatGPT subscription authentication for actual workers. API-key authentication is rejected. Codex subscription availability and limits still apply.
 - Git for cloning, and for verified Git worktrees when used.
 
-Install Codex and Python using their official distributions. Check `codex --version` and `python --version`. If Python is available through `py -3.12` or an explicit executable instead, use that interpreter to run the installer.
+Install Codex using the [official CLI installation guide](https://learn.chatgpt.com/docs/cli) and Python from its official distribution. Windows standalone installation uses the vendor's `https://chatgpt.com/codex/install.ps1` installer; follow the current official guide rather than downloading an unrelated binary. With an existing Node.js/npm installation, `npm install -g @openai/codex` is another official distribution path. Check `codex --version` and `python --version`; do not assume the latest stable CLI exposes the tested alpha project APIs. If Python is available through `py -3.12` or an explicit executable instead, use that interpreter to run the plugin installer.
+
+To select the exact publicly published CLI build used in live qualification, with Node.js/npm already installed:
+
+```powershell
+npm install -g @openai/codex@0.164.0-alpha.11.1
+codex --version
+```
+
+This is an alpha dependency with experimental project APIs. Select a compatible build deliberately; the installer minimum-version check does not certify arbitrary newer builds.
 
 ## Install a released checkout
 

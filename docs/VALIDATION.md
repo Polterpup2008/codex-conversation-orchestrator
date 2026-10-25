@@ -1,6 +1,6 @@
 # Release validation
 
-Candidate: **0.3.7**. Validation date: 2026-10-25. This report distinguishes real runtime behavior, recorded protocol tests and remaining platform limits. Private transcripts, identifiers, databases and machine paths are deliberately excluded.
+Release: **0.3.7**. Validation date: 2026-10-25. This report distinguishes real runtime behavior, recorded protocol tests and remaining platform limits. Private transcripts, identifiers, databases and machine paths are deliberately excluded.
 
 ## Environment and evidence
 
@@ -29,7 +29,9 @@ Two independent persistent coordinator chats managed two separate local projects
 
 The current automated suite contains 61 tests covering synthetic migration, ownership/idempotency, independent audit binding/freshness, scoped authorization, model routing, MCP envelopes/shutdown, lifecycle uncertainty and targeted concurrent interleavings. Recorded transports exercise error boundaries without claiming those failures occurred against a remote service.
 
-Independent source review identified and drove repairs to authorization, lifecycle/outbox races, stale role/grant policies, namespace collisions, external workspace overlap, integration configuration, audit freshness, shutdown ordering, installation and release privacy. Final source re-review, clean-checkout installation and publication checks are being completed before tagging; this candidate report does not itself declare those gates passed.
+Independent source review identified and drove repairs to authorization, lifecycle/outbox races, stale role/grant policies, namespace collisions, external workspace overlap, integration configuration, audit freshness, shutdown ordering, installation and release privacy. The final focused independent review found no remaining code blocker, rechecked the three last reproductions and exercised 37 existing test bodies using in-memory fixtures. This is a bounded review result, not proof that no other defects exist.
+
+The final source passed all 61 disk-backed tests from a clean Git clone. Official installation into a fresh profile passed, including generated-launcher initialization, 31-tool discovery, explicit profile/state wiring and an identical reinstall; no credentials were copied. The installed 0.3.7 build also resumed both existing production projects and repeated same-ID auditor archive/restoration. Final schema-8 preservation checks compared every original value across 63 registry rows, passed SQLite integrity/foreign-key checks, and confirmed all original A/B turn values unchanged. The release privacy checker passed for the 36 tracked public files. Detailed checks remain private; the public report is a sanitized summary.
 
 ## Limits
 
@@ -39,6 +41,7 @@ Independent source review identified and drove repairs to authorization, lifecyc
 - Same-OS-user trust is required. Project scopes prevent accidental API interference; they do not guarantee confidential file reads or isolation from a hostile local process. Allowed integrations have their own authority.
 - Known effective user/project/profile integrations are controlled. Arbitrary managed configuration and future runtime behavior need separate validation. No universal external integration guarantee is made.
 - Acknowledged execution can be interrupted by process loss. Ambiguous messages/creations/lifecycle outcomes stay fenced; absence from history is not permission to resend. There is no remote exactly-once guarantee.
+- New project IDs reject colons. Any pre-release production grant using a colon-bearing ID needs explicit operator migration; existing legacy experimental records remain unchanged. No such production grant was present in this installation.
 - Audit hashes bind the listed current artifacts and delivery revision. They do not prove coverage of unlisted files or protect against subsequent external edits.
 - Subscription throttling is handled as a reported failure/uncertain outcome without silent fallback or retry storms; no artificial account quota exhaustion was attempted. The coordinator loop runs only while its chat operates; there is no unattended scheduler.
 

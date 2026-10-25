@@ -201,7 +201,7 @@ class AdvancedTests(unittest.TestCase):
         r.mark_dispatching('alpha::negative-audit',self.a.instance);turn=str(uuid.uuid4());r.set_message('alpha::negative-audit','sent',turn)
         r.completed(auditor,{'id':turn,'status':'completed','items':[{'type':'agentMessage','text':'REJECT: specific unresolved defect'}]})
         task=r.one('tasks','id','alpha::task')
-        self.a.audit_assess('alpha::dispute',task['id'],'alpha::negative-audit','disputed','Request verification of the disputed claim')
+        invoke(self.a,'audit_assess',{'assessment_key':'alpha::dispute','task_id':task['id'],'audit_message_key':'alpha::negative-audit','decision':'audit_disputed','evidence':'Request verification of the disputed claim'})
         with self.assertRaises(BridgeError):self.a.task_review(task['id'],task['revision'],'alpha::negative-audit','accept','Disputed')
         self.assertEqual(r.one('tasks','id',task['id'])['state'],'needs_audit')
 

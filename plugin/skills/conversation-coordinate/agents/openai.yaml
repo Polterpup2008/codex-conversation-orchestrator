@@ -1,0 +1,5 @@
+interface:
+  display_name: "Conversation Coordinator"
+  short_description: "Coordinate authorized persistent Codex workers"
+policy:
+  allow_implicit_invocation: false

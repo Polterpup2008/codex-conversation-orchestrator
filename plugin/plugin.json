@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "conversation-orchestrator",
+  "version": "0.3.6",
+  "description": "Coordinate independent persistent Codex conversations with explicit project authorization, durable tasks, and independent audits.",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Conversation Orchestrator",
+        "shortDescription": "Coordinate authorized Codex projects",
+        "developerName": "Personal tools",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ]
+      }
+    }
+  }
+}

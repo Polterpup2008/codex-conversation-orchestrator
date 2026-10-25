@@ -117,7 +117,7 @@ class MigrationTests(unittest.TestCase):
             with registry.connect() as db:
                 for t,rows in before.items():
                     self.assertEqual([tuple(r) for r in db.execute('SELECT '+','.join(columns[t])+' FROM '+t)],rows)
-                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],7)
+                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],8)
                 self.assertFalse(db.execute('PRAGMA foreign_key_check').fetchall())
             self.assertEqual(registry.one('conversations','thread_id',AUDITOR)['role'],'Auditor')
 

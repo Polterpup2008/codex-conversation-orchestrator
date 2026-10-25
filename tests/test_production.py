@@ -117,8 +117,9 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(len(service.registry.rows('SELECT * FROM coordinator_leases WHERE owner_token=?',(service.instance,))),1)
 
     def test_reserved_project_separator_and_external_worker_overlap(self):
-        with self.assertRaisesRegex(BridgeError,'separator'):
-            grant_project(self.a.registry,'p::nested',self.base/'alpha',str(uuid.uuid4()),headless=True)
+        for project in ['p::nested','p:',':p']:
+            with self.assertRaisesRegex(BridgeError,'separator'):
+                grant_project(self.a.registry,project,self.base/'alpha',str(uuid.uuid4()),headless=True)
         external=self.base/'external-worktree';external.mkdir()
         with self.a.registry.connect() as db:
             db.execute('UPDATE conversations SET workspace=? WHERE thread_id=?',(str(external),self.workers[('alpha','Developer')]))
@@ -171,6 +172,42 @@ class ProductionTests(unittest.TestCase):
         self.assertFalse(self.a.registry.one('conversations','thread_id',worker)['archived'])
         self.assertTrue(self.a.conversation_unarchive(worker)['duplicate_prevented'])
         self.assertEqual(native['calls'],1)
+
+    def test_uncertain_lifecycle_is_project_local_and_failed_prepare_is_recoverable(self):
+        worker=self.workers[('alpha','Developer')]
+        self.a.meta=None
+        with self.a.registry.connect() as db:
+            db.execute("INSERT INTO operations(thread_id,owner_token,name,stage) VALUES(?,?,'desktop_prepare','dispatching')",(worker,self.a.instance))
+        # Unrelated local policy changes remain available while alpha is fenced.
+        grant_project(self.a.registry,'beta',self.roots['beta'],self.coordinators['beta'],headless=True,integrations=['mcp_servers.local'])
+        with self.assertRaisesRegex(BridgeError,'uncertain'):
+            grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],headless=True)
+        self.a.bridge_release()
+        self.meta[worker]={'id':worker,'cwd':str(self.roots['alpha']),'projectId':'unchanged-canonical-project'}
+        result=self.a.conversation_lifecycle_reconcile(worker)
+        self.assertTrue(result['reconciled'])
+        self.assertEqual(result['worker']['desktop_sync_state'],'pending')
+        self.assertFalse(self.a.registry.rows('SELECT * FROM operations'))
+
+    def test_legacy_lifecycle_migration_is_conservative(self):
+        from orchestrator.storage import Registry
+        worker=self.workers[('alpha','Developer')]
+        with self.a.registry.connect() as db:
+            db.execute('DROP TABLE operations')
+            db.execute('CREATE TABLE operations(thread_id TEXT PRIMARY KEY,owner_token TEXT NOT NULL,name TEXT NOT NULL)')
+            db.execute("INSERT INTO operations VALUES(?,?,'archive')",(worker,'old-owner'))
+            db.execute('PRAGMA user_version=6')
+        migrated=Registry(self.a.registry.path)
+        self.assertEqual(migrated.rows('SELECT stage FROM operations')[0]['stage'],'dispatching')
+        with self.assertRaisesRegex(BridgeError,'lifecycle'):
+            self.a.message_send(worker,'Must be blocked','legacy-fence')
+
+    def test_redirected_grant_root_blocks_creation_preflight(self):
+        from unittest.mock import patch
+        with patch('orchestrator.authorization.canonical',return_value=str(self.roots['beta'])):
+            with self.assertRaisesRegex(BridgeError,'resolves elsewhere'):
+                self.a.conversation_create('alpha','No redirect','Developer','root-redirect')
+        self.assertFalse(self.a.registry.rows("SELECT * FROM creations WHERE key='root-redirect'"))
 
     def test_cross_project_reads_mutations_and_rebinding_are_denied(self):
         for tool,args in [('conversation_role',{'thread_id':self.workers[('beta','Developer')],'role':'Auditor'}),

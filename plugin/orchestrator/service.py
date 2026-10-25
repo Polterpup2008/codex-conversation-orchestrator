@@ -183,7 +183,9 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 with self.registry.connect() as db:db.execute('UPDATE conversations SET archived=? WHERE thread_id=?',(int(archived),thread_id))
             elif old['name']=='desktop_prepare':
                 remote=self.rpc.call('thread/read',{'threadId':thread_id,'includeTurns':False})['thread']
-                if remote.get('projectId') not in ('',None):raise BridgeError('LIFECYCLE_UNKNOWN','The expected metadata preparation is not observable; keep the fence.')
+                if 'projectId' not in remote:raise BridgeError('LIFECYCLE_UNKNOWN','Current native project metadata is unavailable; keep the fence.')
+                # A closed former transport cannot apply a delayed update now.
+                # Either observed outcome requires fresh host attachment proof.
                 with self.registry.connect() as db:db.execute("UPDATE conversations SET desktop_sync_state='pending',desktop_evidence=NULL WHERE thread_id=?",(thread_id,))
             else:raise BridgeError('LIFECYCLE_UNKNOWN','Unsupported recovery operation; keep the fence.')
         with self.registry.connect() as db:db.execute('DELETE FROM operations WHERE thread_id=? AND owner_token=?',(thread_id,old['owner_token']))
@@ -221,7 +223,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         with self.registry.transaction() as db:
             if db.execute('SELECT 1 FROM operations WHERE thread_id=?',(thread_id,)).fetchone() or db.execute("SELECT 1 FROM messages WHERE thread_id=? AND state IN ('preparing','sent','unknown')",(thread_id,)).fetchone():
                 raise BridgeError('CONVERSATION_BUSY','Resolve active sends/lifecycle operations first.')
-            db.execute('INSERT INTO operations(thread_id,owner_token,name) VALUES(?,?,?)',(thread_id,self.instance,name))
+            db.execute("INSERT INTO operations(thread_id,owner_token,name,stage) VALUES(?,?,?,'preparing')",(thread_id,self.instance,name))
         try:
             yield
         except BaseException:
@@ -231,7 +233,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             with self.registry.connect() as db:db.execute('DELETE FROM operations WHERE thread_id=? AND owner_token=?',(thread_id,self.instance))
 
     def project_create(self, project_id, workspace, desktop=False, name=None, desktop_project_id=None):
-        if '::' in project_id:raise BridgeError('INVALID_PROJECT_ID','Project IDs cannot contain the reserved :: separator.')
+        if ':' in project_id:raise BridgeError('INVALID_PROJECT_ID','Project IDs cannot contain the reserved colon separator.')
         path = pathlib.Path(canonical(workspace))
         if not path.is_absolute():
             raise BridgeError('INVALID_WORKSPACE', 'Use an absolute path for a new isolated experiment directory.')

@@ -23,7 +23,7 @@ Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscriptio
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.3.6
+git checkout v0.3.7
 python scripts/install.py
 codex login
 ```

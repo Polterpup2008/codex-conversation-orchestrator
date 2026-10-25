@@ -4,6 +4,7 @@ Scopes prevent accidental cross-project API use. This is a same-OS-user tool,
 not a security boundary against a person who can edit its database or run shell.
 """
 import json
+import os
 import pathlib
 import time
 from .errors import BridgeError
@@ -14,7 +15,7 @@ def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
                   desktop_project_id=None, headless=False, integrations=()):
     from .service import identifier
     identifier(coordinator)
-    if '::' in project_id:raise BridgeError('INVALID_PROJECT_ID','Project IDs cannot contain the reserved :: separator.')
+    if ':' in project_id:raise BridgeError('INVALID_PROJECT_ID','Project IDs cannot contain the reserved colon separator.')
     root = canonical(root)
     path = pathlib.Path(root)
     if not path.is_dir() or path == path.parent or path_key(path) == path_key(pathlib.Path.home()):
@@ -24,7 +25,7 @@ def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
     with registry.transaction() as db:
         if db.execute('SELECT 1 FROM control_lock').fetchone():
             raise BridgeError('PROJECT_BUSY','A control operation is in progress. Close a crashed bridge and reconcile it before changing grants.')
-        if db.execute("SELECT 1 FROM creations WHERE state='preparing'").fetchone() or db.execute('SELECT 1 FROM operations').fetchone():
+        if db.execute("SELECT 1 FROM creations WHERE state='preparing' AND (project_id=? OR project_id IS NULL)",(project_id,)).fetchone() or db.execute('SELECT 1 FROM operations o JOIN conversations c ON c.thread_id=o.thread_id WHERE c.project_id=?',(project_id,)).fetchone():
             raise BridgeError('OUTCOME_UNKNOWN','Resolve uncertain creations/lifecycle operations before changing grants.')
         rows = [dict(r) for r in db.execute('SELECT * FROM projects')]
         for row in rows:
@@ -37,6 +38,9 @@ def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
         for worker in db.execute('SELECT project_id,workspace FROM conversations WHERE project_id<>? AND workspace IS NOT NULL',(project_id,)):
             if contained(root,worker['workspace']) or contained(worker['workspace'],root):
                 raise BridgeError('PROJECT_OVERLAP','The root overlaps another project worker workspace.')
+        for creation in db.execute("SELECT workspace FROM creations WHERE state='preparing' AND project_id<>? AND workspace IS NOT NULL",(project_id,)):
+            if contained(root,creation['workspace']) or contained(creation['workspace'],root):
+                raise BridgeError('PROJECT_OVERLAP','The root overlaps another project pending worker workspace.')
         prior = db.execute('SELECT * FROM authorizations WHERE project_id=?', (project_id,)).fetchone()
         if prior and prior['enabled'] and prior['coordinator_thread_id'] != coordinator:
             raise BridgeError('COORDINATOR_CONFLICT', 'Revoke the old grant before an explicit coordinator handoff.')
@@ -64,6 +68,8 @@ def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
 class AuthorizationOperations:
     def _project(self, project_id):
         project = self.registry.one('projects', 'id', project_id)
+        if os.path.normcase(os.path.abspath(project['root']))!=os.path.normcase(canonical(project['root'])):
+            raise BridgeError('SCOPE_LOST','The authorized root now resolves elsewhere; local operator review is required.')
         scope = getattr(self, 'project_scope', None)
         if scope and scope != project_id:
             raise BridgeError('PROJECT_ACCESS_DENIED', 'This MCP connection is bound to a different project.')

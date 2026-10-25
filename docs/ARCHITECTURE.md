@@ -16,7 +16,7 @@ The Python MCP server uses JSON-RPC over stdio. It launches official `codex app-
 
 The authorization CLI is outside MCP. It verifies an actual coordinator's primary cwd before creating a production grant. Registration obtains a lease tied to a live bridge. Dead-owner detection uses bridge identity and local process liveness; ambiguous deliveries remain reserved after crashes.
 
-Project IDs identify grants and cannot contain the reserved `::` separator. UUIDs identify actual Codex conversations. Short task/message/create keys are automatically prefixed with the bound project namespace; returned prefixed keys may be reused directly. Task ownership is immutable; dependencies must already exist in the same project. Root overlap, overlap with registered external worker workspaces, and unrelated workspaces are rejected.
+Project IDs identify grants and cannot contain colons. UUIDs identify actual Codex conversations. Short task/message/create keys are automatically prefixed with the bound project namespace; returned prefixed keys may be reused directly. Task ownership is immutable; dependencies must already exist in the same project. Root overlap, overlap with registered external worker workspaces, redirected roots and unrelated workspaces are rejected.
 
 ## MCP tools
 
@@ -60,7 +60,7 @@ Schemas are authoritative. Unknown fields/tools and invalid values fail. Tool er
 
 Messages transactionally reserve an exclusive unresolved slot, then cross a durable dispatch boundary before `turn/start`. That transition is fenced by the live bridge owner. Duplicate keys with changed content/routing fail. Lifecycle reservations prevent archive/preparation from racing with a managed send. Duplicate completion events do not advance revisions twice.
 
-A durable registry control gate serializes short control mutations across connections and local grant changes. Worker turns and status waits still run concurrently. A competing mutation may return `PROJECT_BUSY`; retry the same stable identity after the current operation resolves. Registration is idempotent and does not close an unchanged live transport. Schema 7 adds this gate and pending creation workspace associations without rewriting original conversation/message records.
+A durable registry control gate serializes short control mutations across connections and local grant changes. Worker turns and status waits still run concurrently. A competing mutation may return `PROJECT_BUSY`; retry the same stable identity after the current operation resolves. Registration is idempotent and does not close an unchanged live transport. Schema 8 retains this gate and pending creation workspace associations, conservatively migrating old lifecycle reservations as potentially dispatched without rewriting original conversation/message values.
 
 Archive/unarchive first inspect native persisted state rather than trusting a stale local flag. Empty sessions omitted by native listings can be resolved through the official `thread/read` rollout path under the matching local profile's recognized `sessions` or `archived_sessions` directories. Unrecognized placement remains uncertain. No rollout file or desktop database is edited by this recovery.
 

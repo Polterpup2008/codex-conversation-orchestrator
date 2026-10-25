@@ -16,7 +16,7 @@ Install Codex and Python using their official distributions. Check `codex --vers
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.3.6
+git checkout v0.3.7
 python scripts/install.py
 codex login
 ```
@@ -86,7 +86,7 @@ Private state defaults to `<CODEX_HOME>/conversation-orchestrator/registry.sqlit
 
 Archive is reversible and restricted to idle owned workers with no unresolved messages or unfinished tasks. Production archive requires a reason. `conversation_unarchive` preserves the original ID. The coordinator cannot archive itself. Permanent deletion is unavailable.
 
-Control mutations are serialized briefly across the private registry; worker turns remain concurrent. On `PROJECT_BUSY`, wait for the current control operation and retry the same stable key. Project IDs cannot contain `::`. Grant changes are blocked while creation, lifecycle, or delivery outcomes are unresolved. An uncertain lifecycle operation remains fenced: release/close its old bridge, then call `conversation_lifecycle_reconcile` to inspect native persisted state before proceeding. A fresh coordinator registration can clear a dead process's control gate; it cannot silently clear uncertain remote operations.
+Control mutations are serialized briefly across the private registry; worker turns remain concurrent. On `PROJECT_BUSY`, wait for the current control operation and retry the same stable key. Project IDs cannot contain colons. Grant changes are blocked while that project's creation, lifecycle, or delivery outcomes are unresolved; unassociated legacy creations require operator investigation. Other projects' unresolved operations do not block unrelated grants. An uncertain lifecycle operation remains fenced: release/close its old bridge, then call `conversation_lifecycle_reconcile` to inspect native persisted state before proceeding. A fresh coordinator registration can clear a dead process's control gate; it cannot silently clear uncertain remote operations.
 
 ## Troubleshooting
 

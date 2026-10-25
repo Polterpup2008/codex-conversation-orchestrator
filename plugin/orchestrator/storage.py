@@ -57,7 +57,8 @@ class Registry:
     def __init__(self, path):
         self.path = pathlib.Path(path); self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
-            if db.execute('PRAGMA user_version').fetchone()[0] > 7:
+            prior_version=db.execute('PRAGMA user_version').fetchone()[0]
+            if prior_version > 8:
                 raise BridgeError('REGISTRY_VERSION', 'Registry is newer than this plugin. Use the matching plugin version.')
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript(SCHEMA)
@@ -78,7 +79,7 @@ class Registry:
                     'tasks':{'model':'TEXT','effort':'TEXT','difficulty':'TEXT','routing_justification':'TEXT'},
                     'messages':{'routing':'TEXT'},
                     'creations':{'project_id':'TEXT','workspace':'TEXT'},
-                    'operations':{'stage':"TEXT NOT NULL DEFAULT 'preparing'"},
+                    'operations':{'stage':"TEXT NOT NULL DEFAULT 'dispatching'"},
                 }
                 for table,columns in additions.items():
                     present={r['name'] for r in db.execute(f'PRAGMA table_info({table})')}
@@ -94,7 +95,8 @@ class Registry:
                     db.execute('ALTER TABLE projects_v6 RENAME TO projects')
                 if db.execute('PRAGMA foreign_key_check').fetchone():
                     raise BridgeError('REGISTRY_INTEGRITY', 'Foreign-key validation failed during migration.')
-                db.execute('PRAGMA user_version=7'); db.commit()
+                if prior_version<8:db.execute("UPDATE operations SET stage='dispatching' WHERE stage='preparing'")
+                db.execute('PRAGMA user_version=8'); db.commit()
             except Exception:
                 db.rollback();raise
             finally:

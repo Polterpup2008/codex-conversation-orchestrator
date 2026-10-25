@@ -37,7 +37,7 @@ def main():
         print(json.dumps({'authorized':result,'next_step':'Call coordinator_register in the designated coordinator.'},indent=2))
     elif args.action=='revoke':
         with registry.transaction() as db:
-            if db.execute('SELECT 1 FROM control_lock').fetchone() or db.execute("SELECT 1 FROM creations WHERE state='preparing'").fetchone() or db.execute('SELECT 1 FROM operations').fetchone():raise BridgeError('PROJECT_BUSY','Resolve in-flight or uncertain control operations first.')
+            if db.execute('SELECT 1 FROM control_lock').fetchone() or db.execute("SELECT 1 FROM creations WHERE state='preparing' AND (project_id=? OR project_id IS NULL)",(args.project_id,)).fetchone() or db.execute('SELECT 1 FROM operations o JOIN conversations c ON c.thread_id=o.thread_id WHERE c.project_id=?',(args.project_id,)).fetchone():raise BridgeError('PROJECT_BUSY','Resolve this project in-flight or uncertain control operations first.')
             if db.execute("SELECT 1 FROM messages m JOIN conversations c ON c.thread_id=m.thread_id WHERE c.project_id=? AND m.state IN ('preparing','sent','unknown')",(args.project_id,)).fetchone():raise BridgeError('PROJECT_BUSY','Resolve or interrupt pending sends before revocation.')
             if db.execute('UPDATE authorizations SET enabled=0 WHERE project_id=?',(args.project_id,)).rowcount!=1:raise BridgeError('NOT_FOUND','No such production grant.')
         print(json.dumps({'project_id':args.project_id,'authorized':False}))

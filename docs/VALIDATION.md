@@ -1,6 +1,6 @@
 # Release validation
 
-Candidate: **0.3.6**. Validation date: 2026-10-25. This report distinguishes real runtime behavior, recorded protocol tests and remaining platform limits. Private transcripts, identifiers, databases and machine paths are deliberately excluded.
+Candidate: **0.3.7**. Validation date: 2026-10-25. This report distinguishes real runtime behavior, recorded protocol tests and remaining platform limits. Private transcripts, identifiers, databases and machine paths are deliberately excluded.
 
 ## Environment and evidence
 
@@ -27,7 +27,7 @@ Two independent persistent coordinator chats managed two separate local projects
 
 ## Automated and release gates
 
-The current automated suite contains 58 tests covering synthetic migration, ownership/idempotency, independent audit binding/freshness, scoped authorization, model routing, MCP envelopes/shutdown, lifecycle uncertainty and targeted concurrent interleavings. Recorded transports exercise error boundaries without claiming those failures occurred against a remote service.
+The current automated suite contains 61 tests covering synthetic migration, ownership/idempotency, independent audit binding/freshness, scoped authorization, model routing, MCP envelopes/shutdown, lifecycle uncertainty and targeted concurrent interleavings. Recorded transports exercise error boundaries without claiming those failures occurred against a remote service.
 
 Independent source review identified and drove repairs to authorization, lifecycle/outbox races, stale role/grant policies, namespace collisions, external workspace overlap, integration configuration, audit freshness, shutdown ordering, installation and release privacy. Final source re-review, clean-checkout installation and publication checks are being completed before tagging; this candidate report does not itself declare those gates passed.
 

@@ -18,6 +18,8 @@ from .projects import ProjectOperations,canonical,path_key,allowed_workspace,con
 from .routing import ModelOperations
 from .authorization import AuthorizationOperations
 from .auditing import AuditOperations
+from .questions import QuestionOperations,QUESTION_TOOL
+from .coordination import CoordinationOperations
 
 TERMINAL = ('completed', 'failed', 'interrupted')
 SOURCES = ['cli', 'vscode', 'exec', 'appServer', 'unknown']
@@ -31,7 +33,17 @@ def identifier(value):
     return value
 
 
-class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOperations):
+class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOperations,QuestionOperations,CoordinationOperations):
+    def bridge_status(self):
+        from . import __version__
+        root=pathlib.Path(__file__).resolve().parents[1]
+        with self.registry.connect() as db:schema=db.execute('PRAGMA user_version').fetchone()[0]
+        return {'version':__version__,'registry_schema':schema,'plugin_root':str(root),'coordination_skill':str(root/'skills/conversation-coordinate/SKILL.md'),
+                'specialized_skills':{p.name:str(p/'SKILL.md') for p in (root/'skills').iterdir() if p.is_dir() and (p/'SKILL.md').is_file()},
+                'codex_home':str(pathlib.Path(os.environ.get('CODEX_HOME',pathlib.Path.home()/'.codex'))),'data_dir':str(self.data_dir),
+                'project_scope':self.project_scope,'per_project_plugin_copy_required':False,'production_requires_local_grant_and_registration':True,
+                'note':'This is the version actually serving this MCP connection. Old chats can retain older tool processes. Project configuration may disable an installed plugin; a template alone neither installs tools nor grants authority.'}
+
     def __init__(self, data_dir=None, transport_factory=AppServer):
         self.data_dir = pathlib.Path(data_dir or os.environ.get('ORCHESTRATOR_DATA_DIR') or
             pathlib.Path(os.environ.get('CODEX_HOME', pathlib.Path.home()/'.codex'))/'conversation-orchestrator')
@@ -67,9 +79,14 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 if self.project_scope and self.transport_factory is AppServer:
                     options={'workspace':self._project(self.project_scope)['root'],
                              'allow_integrations':json.loads(self.project_policy['integrations'])}
-                self._transport = self.transport_factory(self.data_dir/'logs', self.registry.event,**options)
+                generation=str(uuid.uuid4()) if self.transport_factory is AppServer else None
+                if self.transport_factory is AppServer:options.update(on_question=self._capture_question,generation=generation)
+                self._transport = self.transport_factory(self.data_dir/'logs',lambda method,params:self._event(method,params,generation),**options)
                 self.loaded.clear()
             return self._transport
+
+    def _event(self,method,params,generation=None):
+        self.registry.event(method,params);self._question_event(method,params,generation)
 
     def close(self):
         if self._closed:return
@@ -299,7 +316,8 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             +conversation_rule+'Use local Python standard-library tools. '
             f'The host Python interpreter is {sys.executable}; it may be inaccessible in a worker sandbox. '
             'Use an accessible installed or bundled Python runtime and -B; one inaccessible interpreter is not proof that no runtime is available. '
-            'State observed evidence and limitations. Auditor roles must not modify the implementation.')
+            'State observed evidence and limitations. Auditor roles must not modify the implementation. '
+            'For an ordinary blocking question use orchestrator_question if available. Otherwise end your turn with exactly ORCHESTRATOR_QUESTION_JSON followed by a newline and a JSON object with question (string), category (technical, requirement, creative or strategic), and sources (array of paths). Do not invent missing requirements. Never use this mechanism for security approvals, permissions, secrets or irreversible confirmations.')
 
     def conversation_create(self, project_id, name, role, create_key, capabilities=None,coordinator_thread_id=None,
                             workspace=None,model=None,effort=None,difficulty=None,justification=None):
@@ -325,6 +343,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             'model':route['model'],'config':worker_config,'allowProviderModelFallback':False,
             'serviceName': 'conversation_orchestrator',
             'developerInstructions':self._role_instructions(role,project['root'],cwd,inherited_instructions)}
+        params['dynamicTools']=[QUESTION_TOOL]
         if desktop_id and not project.get('desktop_ui_project_id'):
             params['projectId']=desktop_id
         params['runtimeWorkspaceRoots']=[cwd]
@@ -420,7 +439,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         return {'worker': self.registry.one('conversations', 'thread_id', thread_id),
                 'effect': 'Role saved. Sandbox and role instructions refresh before the next managed turn.'}
 
-    def message_send(self, thread_id, message, message_key, task_id=None,model=None,effort=None,difficulty=None,justification=None,audit_task_id=None,audit_artifacts=None):
+    def message_send(self, thread_id, message, message_key, task_id=None,model=None,effort=None,difficulty=None,justification=None,audit_task_id=None,audit_artifacts=None,handoff_key=None):
         worker, _ = self._worker(thread_id)
         if self.project_scope and worker['role'].lower()=='coordinator':
             raise BridgeError('COORDINATOR_PROTECTED','The coordinator directs workers; it is not a managed worker dispatch target.')
@@ -430,10 +449,16 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         if audit_task_id:intent['audit_task_id']=audit_task_id
         if audit_artifacts:intent['audit_artifacts']=audit_artifacts
         existing=self.registry.rows('SELECT key FROM messages WHERE key=?',(message_key,))
+        profiles=self.registry.rows('SELECT payload FROM worker_profiles WHERE thread_id=?',(thread_id,))
+        if profiles and json.loads(profiles[0]['payload'])['status']=='retired':raise BridgeError('WORKER_RETIRED','Explicitly reactivate this worker context before sending new work.')
+        if handoff_key:
+            intent['handoff_key']=handoff_key
+            message+=self._handoff_text(handoff_key,thread_id,verify=not existing)
+        paths=[] if existing else self._planned_paths(task_id)
         audit_link=None if existing else self._audit_request(worker,audit_task_id,audit_artifacts)
         route=None if existing else self._message_route(worker,task_id,model,effort,difficulty,justification)
         self._clear_orphaned_operation(thread_id)
-        row, fresh = self.registry.reserve_message(message_key, thread_id, message, task_id, self.instance,intent,audit_link)
+        row, fresh = self.registry.reserve_message(message_key, thread_id, message, task_id, self.instance,intent,audit_link,paths)
         if not fresh:
             return {'duplicate_prevented': True, **self.message_status(message_key)}
         self.registry.routing(message_key,{'selection':route,'intent':intent})
@@ -514,6 +539,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             if hydrated and hydrated['status'] in TERMINAL:
                 self.registry.set_message(message_key, row['state'], result=hydrated)
                 result = hydrated
+        if row['state']=='completed':self.registry.reconcile_questions(message_key)
         outputs = [item['text'] for item in (result or {}).get('items', []) if item.get('type') == 'agentMessage']
         task_state = None; task_verified = False
         if row['task_id']:
@@ -524,6 +550,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             'routing':json.loads(row['routing']) if row.get('routing') else None,
             'delivery_state': row['state'], 'turn': result, 'outputs': outputs,
             'owner_bridge_active': external_owner,
+            'questions':self.registry.rows("SELECT key,mode,state,payload,task_id FROM questions WHERE message_key=? AND state IN ('pending','escalated','answering')",(message_key,)),
             'task_state': task_state, 'task_verified': task_verified, 'note': 'Turn completion does not imply task acceptance.'}
 
     def message_wait(self, message_key, timeout_seconds=30):
@@ -562,6 +589,8 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         if project['mode']=='production' and not reason:
             raise BridgeError('ARCHIVE_REASON_REQUIRED','Record the handoff/cleanup reason before archiving.')
         with self._exclusive_operation(thread_id,'archive'):
+            if self.registry.rows("SELECT key FROM questions WHERE thread_id=? AND state IN ('pending','escalated','answering')",(thread_id,)):
+                raise BridgeError('UNRESOLVED_QUESTIONS','Answer or explicitly resolve outstanding worker questions before archival.')
             if self._native_archive_state(thread_id):
                 with self.registry.connect() as db:db.execute('UPDATE conversations SET archived=1 WHERE thread_id=?',(thread_id,))
                 return {'thread_id':thread_id,'archived':True,'permanently_deleted':False,'duplicate_prevented':True}
@@ -597,15 +626,19 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             if db.execute("SELECT 1 FROM messages m LEFT JOIN audit_links a ON a.message_key=m.key WHERE (m.task_id=? OR a.task_id=?) AND m.state IN ('preparing','sent','unknown')",(task_id,task_id)).fetchone():
                 raise BridgeError('OUTCOME_UNKNOWN','Resolve the pending delivery before cancelling.')
             db.execute("UPDATE tasks SET state='cancelled',evidence=?,revision=revision+1 WHERE id=?",(json.dumps({'cancellation_reason':reason,'previous_evidence':current['evidence']}),task_id))
+            db.execute("UPDATE questions SET state='unavailable' WHERE task_id=? AND state IN ('pending','escalated')",(task_id,))
         return self.registry.one('tasks','id',task_id)
 
-    def task_assign(self, project_id, task_id, owner, requirements, dependencies=None,model=None,effort=None,difficulty=None,justification=None):
+    def task_assign(self, project_id, task_id, owner, requirements, dependencies=None,model=None,effort=None,difficulty=None,justification=None,plan_key=None):
         worker, _ = self._worker(owner)
         if self.project_scope and worker['role'].lower()=='coordinator':
             raise BridgeError('COORDINATOR_PROTECTED','Assign delivery work to a developer, architect or other worker.')
         if worker['project_id'] != project_id:
             raise BridgeError('PROJECT_CONFLICT', 'Task owner belongs to a different experiment.')
         dependencies = dependencies or []
+        if plan_key:
+            planned=self._planned_task(plan_key,task_id)
+            if (planned['owner'],planned['requirements'],planned['dependencies'])!=(owner,requirements,dependencies):raise BridgeError('PLAN_CONFLICT','Use the owner, exact requirements and dependencies returned by the current plan.')
         if any(v is not None for v in [model,effort,difficulty]):
             self.model_route(difficulty or 'standard',worker['role'],model or (None if difficulty else worker.get('model')),effort,justification)
         with self.registry.transaction() as db:
@@ -615,16 +648,18 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                     raise BridgeError('OWNERSHIP_CONFLICT', 'Task ID already has an assignment. It cannot be silently reassigned.')
                 if (old['model'],old['effort'],old['difficulty'],old['routing_justification'])!=(model,effort,difficulty,justification):
                     raise BridgeError('IDEMPOTENCY_CONFLICT','Existing task has different model-routing overrides.')
+                if old['plan_key']!=plan_key:raise BridgeError('PLAN_CONFLICT','Existing task has another plan binding.')
                 return dict(old)
             for dep in dependencies:
                 row = db.execute('SELECT project_id FROM tasks WHERE id=?', (dep,)).fetchone()
                 if not row or row['project_id'] != project_id:
                     raise BridgeError('INVALID_DEPENDENCY', 'Dependencies must already exist in the same project, preventing cycles.')
-            db.execute('INSERT INTO tasks(id,project_id,owner,requirements,dependencies,model,effort,difficulty,routing_justification) VALUES(?,?,?,?,?,?,?,?,?)',
-                (task_id, project_id, owner, requirements, json.dumps(dependencies),model,effort,difficulty,justification))
+            db.execute('INSERT INTO tasks(id,project_id,owner,requirements,dependencies,model,effort,difficulty,routing_justification,plan_key) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                (task_id, project_id, owner, requirements, json.dumps(dependencies),model,effort,difficulty,justification,plan_key))
         return self.registry.one('tasks', 'id', task_id)
 
     def task_review(self, task_id, expected_revision, audit_message_key, verdict, evidence):
+        self._planned_paths(task_id)
         self._project(self.registry.one('tasks','id',task_id)['project_id'])
         audit = self.registry.one('messages', 'key', audit_message_key)
         auditor = self.registry.one('conversations', 'thread_id', audit['thread_id'])
@@ -694,6 +729,8 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 result[key]=[r for r in result[key] if r['project_id'] in visible]
             workers={w['thread_id'] for w in result['workers']}
             result['unresolved_messages']=[r for r in result['unresolved_messages'] if r['thread_id'] in workers]
+        visible={p['id'] for p in result['projects']}
+        result['coordination_records']=[r for r in self.registry.rows('SELECT key,project_id,kind,revision FROM coordination_records') if r['project_id'] in visible]
         return result
 
 
@@ -716,5 +753,6 @@ for _method in ('coordinator_register','bridge_release','project_create','projec
                 'conversation_create','conversation_resume','conversation_name','conversation_role',
                 'conversation_configure','conversation_desktop_prepare','conversation_desktop_confirm',
                 'conversation_archive','conversation_unarchive','conversation_lifecycle_reconcile',
-                'message_send','turn_interrupt','task_assign','task_review','task_recover','task_cancel','project_note'):
+                'message_send','turn_interrupt','task_assign','task_review','task_recover','task_cancel','project_note','question_reply','question_escalate',
+                'worker_context','context_handoff','plan_record','architecture_contract','audit_assess'):
     setattr(Service,_method,_serialized_control(getattr(Service,_method)))

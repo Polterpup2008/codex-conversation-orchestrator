@@ -25,7 +25,7 @@ This is an alpha dependency with experimental project APIs. Select a compatible 
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.3.7
+git checkout v0.4.2
 python scripts/install.py
 codex login
 ```
@@ -37,6 +37,10 @@ The installer verifies Python and the minimum CLI version, builds a private loca
 The plugin ID is `conversation-orchestrator@conversation-orchestrator-lab`. The historical marketplace name is retained for upgrade compatibility. Only this marketplace's source is updated; other marketplaces and plugin policies are preserved. The identical installed package is reused. Close chats using a package before replacing the same version on Windows; maintainers should version changed packages.
 
 Start a **new Codex chat** to load the updated tools and `conversation-coordinate` skill. An existing chat's tool inventory may remain unchanged. Review normal plugin/tool approval prompts. Do not globally disable approval protections for this plugin.
+
+Installation is shared by chats using the same `CODEX_HOME` profile. **Do not copy the plugin/cache into individual project folders.** Put only each project's customized `orchestrator.md` there, then authorize that exact root/coordinator. `bridge_status` shows the actually loaded version and skill/profile paths. If a chat reports 0.2.2 and `experiment_only`, refresh its plugin process/tool inventory after upgrading; do not solve that by copying another cache folder. On a production-capable version, an unregistered connection still reports `experiment_only` until the local grant and `coordinator_register` are completed. A different profile or explicit project plugin-disable setting needs its own configuration check.
+
+The 0.4 release adds five packaged coordination skills and 11 MCP operations (42 total). Schema 10 migrates existing state additively. Old active question responses cannot be replayed on a new transport generation: finish or reconcile pending work before upgrading/restarting, retain original IDs/keys, and use a fresh continuation only after the original outcome is known. New managed conversations receive the dedicated question tool; older IDs remain reusable through the completed-turn fallback. No API key is required.
 
 For an isolated installation-profile test:
 

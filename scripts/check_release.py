@@ -12,8 +12,13 @@ ALLOWED=['.gitignore','.agents/plugins/marketplace.json','.github/workflows/ci.y
          'plugin/*.py','plugin/*.json','plugin/orchestrator/*.py',
          'plugin/skills/conversation-coordinate/SKILL.md','plugin/skills/conversation-coordinate/agents/openai.yaml',
          'plugin/skills/conversation-coordinate/references/*.md',
+         'plugin/skills/reply-question/SKILL.md','plugin/skills/reply-question/agents/openai.yaml',
+         'plugin/skills/context-handoff/SKILL.md','plugin/skills/context-handoff/agents/openai.yaml',
+         'plugin/skills/task-planner/SKILL.md','plugin/skills/task-planner/agents/openai.yaml',
+         'plugin/skills/audit-arbiter/SKILL.md','plugin/skills/audit-arbiter/agents/openai.yaml',
+         'plugin/skills/architecture-guard/SKILL.md','plugin/skills/architecture-guard/agents/openai.yaml',
          'docs/*.md','scripts/install.py','scripts/authorize.py','scripts/check_release.py',
-         'tests/test_registry.py','tests/test_upgrade.py','tests/test_production.py','tests/legacy_fixture.py','tests/mcp_client.py','tests/live_smoke.py']
+         'tests/test_registry.py','tests/test_upgrade.py','tests/test_production.py','tests/test_advanced.py','tests/legacy_fixture.py','tests/mcp_client.py','tests/live_smoke.py']
 REQUIRED=['README.md','INSTALL.md','LICENSE','ORCHESTRATOR_PROMPT.md','orchestrator.md',
           'docs/VALIDATION.md','plugin/plugin.json','plugin/mcp.json','plugin/server.py',
           'plugin/skills/conversation-coordinate/SKILL.md','scripts/install.py','scripts/authorize.py','tests/legacy_fixture.py']

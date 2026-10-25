@@ -1,0 +1,3 @@
+interface:
+  display_name: "Guard Shared Architecture"
+  short_description: "Protect contracts and verify module integration"

@@ -22,6 +22,7 @@ class RecordedTransport:
     def __init__(self,metadata):
         self.closed=False;self.metadata=metadata;self.calls=[]
         self.active=set();self.completed={};self.guard=threading.RLock();self.pending={}
+        self.generation=str(uuid.uuid4())
     def close(self):self.closed=True
     def call(self,method,params):
         self.calls.append((method,params))

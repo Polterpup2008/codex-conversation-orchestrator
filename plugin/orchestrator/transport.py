@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import threading
 import time
+import uuid
 import tomllib
 import logging
 import logging.handlers
@@ -34,11 +35,13 @@ def integration_policy(config,allow_integrations=()):
 
 
 class AppServer:
-    def __init__(self, data_dir, on_event=lambda *_: None, executable=None, workspace=None, allow_integrations=()):
+    def __init__(self, data_dir, on_event=lambda *_: None, executable=None, workspace=None, allow_integrations=(),on_question=None,generation=None):
         self.pending, self.completed, self.active = {}, {}, set()
         self.guard, self.write_guard = threading.RLock(), threading.Lock()
         self.changed = threading.Condition(self.guard)
         self.counter, self.closed, self.on_event = 0, False, on_event
+        self.on_question=on_question;self.input_requests={}
+        self.generation=generation or str(uuid.uuid4())
         executable = executable or os.environ.get('ORCHESTRATOR_CODEX') or shutil.which('codex')
         if not executable:
             raise BridgeError('CODEX_NOT_FOUND', 'Install the official Codex CLI and sign in with ChatGPT.')
@@ -132,12 +135,24 @@ class AppServer:
                         try:destination.put_nowait(packet)
                         except queue.Full:pass
                 elif 'id' in packet:
+                    if packet.get('method')=='item/tool/call' and packet.get('params',{}).get('tool')=='orchestrator_question' and packet['params'].get('namespace') in (None,'') and self.on_question:
+                        try:
+                            with self.guard:
+                                if len(self.input_requests)>=64:raise BridgeError('QUESTION_CAPACITY','Too many pending worker questions.')
+                                if packet['id'] in self.input_requests:raise BridgeError('QUESTION_ID_CONFLICT','Duplicate live server request ID; refusing to overwrite its question.')
+                                self.input_requests[packet['id']]=packet['params']
+                            self.on_question(packet['id'],packet['params'],self.generation)
+                            continue
+                        except Exception:
+                            with self.guard:self.input_requests.pop(packet['id'],None)
                     # There is no user approval UI here. Never silently approve requests.
                     self._write({'id': packet['id'], 'error': {'code': -32601,
                         'message': 'Unattended bridge cannot fulfill interactive server requests.'}})
                     self.on_event('bridge/unsupportedRequest', {'method': packet.get('method')})
                 else:
                     method, params = packet.get('method'), packet.get('params', {})
+                    if method=='serverRequest/resolved':
+                        with self.guard:self.input_requests.pop(params.get('requestId'),None)
                     if method == 'turn/started':
                         with self.guard:
                             self.active.add((params['threadId'], params['turn']['id']))
@@ -145,6 +160,8 @@ class AppServer:
                     self.on_event(method, params)
                     if method == 'turn/completed':
                         with self.changed:
+                            for key,value in list(self.input_requests.items()):
+                                if value['threadId']==params['threadId'] and value['turnId']==params['turn']['id']:self.input_requests.pop(key,None)
                             self.active.discard((params['threadId'], params['turn']['id']))
                             self.completed[(params['threadId'], params['turn']['id'])] = params['turn']
                             while len(self.completed)>256:self.completed.pop(next(iter(self.completed)))
@@ -160,6 +177,17 @@ class AppServer:
                     except queue.Full:
                         pass
                 self.changed.notify_all()
+
+    def has_question(self,request_id,*,generation,thread_id,turn_id,call_id):
+        with self.guard:
+            pending=self.input_requests.get(request_id)
+            return not self.closed and generation==self.generation and pending is not None and (pending['threadId'],pending['turnId'],pending['callId'])==(thread_id,turn_id,call_id)
+
+    def reply_question(self,request_id,result,**identity):
+        with self.guard:
+            if not self.has_question(request_id,**identity):raise BridgeError('QUESTION_EXPIRED','The exact originating worker question/transport generation is no longer pending.')
+            self._write({'id':request_id,'result':result})
+            self.input_requests.pop(request_id,None)
 
     def wait(self, thread_id, turn_id, seconds):
         deadline = time.monotonic()+seconds

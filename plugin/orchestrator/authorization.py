@@ -125,7 +125,7 @@ class AuthorizationOperations:
 
     def authorize_call(self, name, arguments):
         """Apply scope at the MCP boundary before any resource lookup or mutation."""
-        if name in ('coordinator_register', 'model_list', 'model_route', 'bridge_release'):
+        if name in ('coordinator_register', 'model_list', 'model_route', 'bridge_release','bridge_status'):
             return
         scope = getattr(self, 'project_scope', None)
         if name == 'project_create':
@@ -162,3 +162,10 @@ class AuthorizationOperations:
                 rows = self.registry.rows('SELECT project_id FROM tasks WHERE id=?', (arguments[key],))
                 if rows:
                     self._project(rows[0]['project_id'])
+        if arguments.get('question_key'):
+            rows=self.registry.rows('SELECT project_id FROM questions WHERE key=?',(arguments['question_key'],))
+            if rows:self._project(rows[0]['project_id'])
+        for key in ('plan_key','contract_key','handoff_key','assessment_key','record_key'):
+            if arguments.get(key):
+                rows=self.registry.rows('SELECT project_id FROM coordination_records WHERE key=?',(arguments[key],))
+                if rows:self._project(rows[0]['project_id'])

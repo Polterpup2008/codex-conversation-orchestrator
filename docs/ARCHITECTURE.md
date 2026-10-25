@@ -13,6 +13,8 @@ The Python MCP server uses JSON-RPC over stdio. It launches official `codex app-
 | `transport.py` | Multiplexed calls/events, integration policy and rotating logs. |
 | `service.py` | Conversation/task orchestration and recovery. |
 | `tools.py` | Schemas, validation, namespacing and access checks. |
+| `questions.py` | Dedicated ordinary-question requests, durable replies, completed-turn fallback and human escalation. |
+| `coordination.py` | Expertise profiles, immutable context packets/plans, versioned contracts and audit assessments. |
 
 The authorization CLI is outside MCP. It verifies an actual coordinator's primary cwd before creating a production grant. Registration obtains a lease tied to a live bridge. Dead-owner detection uses bridge identity and local process liveness; ambiguous deliveries remain reserved after crashes.
 
@@ -53,6 +55,17 @@ Project IDs identify grants and cannot contain colons. UUIDs identify actual Cod
 | `model_list` | Official paginated catalog; 60-second cache and explicit refresh. |
 | `model_route` | Preview catalog-validated explicit or difficulty/role-based routing. |
 | `bridge_release` | Release this idle transport; retain scope and reconnect lazily. |
+| `bridge_status` | Actual serving version/profile/skill locations and activation requirements without model startup. |
+| `question_list` | Scoped ordinary questions with source worker/task/turn and reply availability. |
+| `question_reply` | Stable answer identity; exact active-request response or bound same-worker continuation. |
+| `question_escalate` | Record missing human authority/options without sending an answer or approval. |
+| `worker_discover` | Existing workers ranked by explicit expertise overlap/prior delivery, with source freshness. |
+| `worker_context` | Optimistic worker specialization/context profile and retirement/reactivation. |
+| `context_handoff` | Immutable bounded summary, authoritative hashes and selected scoped notes. |
+| `plan_record` | Approved objective, owners, inputs/outputs/acceptance, acyclic dependencies and declared writes. |
+| `architecture_contract` | Versioned shared interfaces/integration rules; changes fenced while dependent work is unfinished. |
+| `audit_assess` | Durable accept/reject/insufficient/disputed judgment; does not alter acceptance. |
+| `coordination_read` | Read a scoped plan, handoff, contract or assessment by key. |
 
 Schemas are authoritative. Unknown fields/tools and invalid values fail. Tool errors use `isError` with application codes; envelope errors use JSON-RPC errors.
 
@@ -71,6 +84,8 @@ Creation configuration is read before reserving a remote key. Once remote creati
 Delivery moves a task to `needs_audit`. Auditor messages use `audit_task_id` and `audit_artifacts`, binding to the current revision, developer message/turn and verified SHA256 values. Review requires an independent auditor, explicit leading ACCEPT/REJECT, matching delivery/revision and unchanged listed artifacts. Coverage of unlisted files and later external modifications remains the coordinator's responsibility.
 
 After restart, register the same coordinator and reconcile original keys/IDs. Known turn IDs match exactly. Lost acknowledgments can use a unique anchored persisted marker; multiple matches fail explicitly. Unknown sends are never automatically resent. This is an at-most-once retry policy, not remote exactly-once delivery.
+
+Schema 10 adds ordinary questions, worker profiles, coordination records, declared path claims and task-plan associations. Active questions bind service owner, transport generation, request ID, worker, turn and tool-call ID. Dedicated replies are recorded before writing and never blindly replayed after uncertainty. Completed-turn answers reserve a stable continuation identity; absence of that durable message reservation permits recovery before dispatch. Auditor continuations revalidate/preserve delivery/artifact bindings without assigning developer ownership to the auditor. Full-history hydration and later reads classify marker questions idempotently.
 
 ## Models and execution
 

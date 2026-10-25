@@ -11,11 +11,25 @@ Use the installed `conversation_orchestrator` tools. Workers are independent per
 
 Production projects require a local operator grant created with the repository's `scripts/authorize.py`. Installation and this skill do not grant project authority. Call `coordinator_register(project_id, coordinator_thread_id)` on a fresh MCP connection using the granted identities. It verifies the real coordinator cwd, binds this connection to one project, and refuses another live connection owning that project. A connection cannot switch projects. After restart, register the same identities and reuse saved workers. A replacement coordinator requires an explicit local revoke/grant handoff after pending sends are resolved and the old connection is closed.
 
+Start with `bridge_status` to identify the actual serving version/profile/skill paths. The plugin is installed once per Codex profile; do not copy its cache into every project. Only the project-specific contract and explicit local root/coordinator grant belong to activation. An `experiment_only` response before registration is not proof the installed version lacks production support. Old chats may retain an older tool inventory/process; refresh the host or start a new chat, then verify the serving version rather than selecting the largest cache folder.
+
 Use `project_status` and `conversation_list` to recover existing state. Production results are scoped to the bound project. Task/message/creation keys are automatically namespaced; retain returned IDs and stable keys. Cross-project access and ownership changes are rejected. A trusted operator may still use the backwards-compatible empty-workspace experiment tools without activating production mode.
 
 Discover primary/native project identities with `project_discover` and the hosting desktop tools. Read [project/model details](references/project-model-routing.md) before creating desktop-linked workers. Canonical App Server IDs, native desktop saved-project IDs, registry IDs and cwd are different identities. If uncertain, stop creation and resolve the identity; never use the plugin's own cwd.
 
 ## Direct the work
+
+Dispatch specialized skills only when their situation arises; read the linked installed skill before applying it. They provide workflows under this project's `orchestrator.md`, not independent authority:
+
+| Situation | Skill |
+|---|---|
+| Worker is missing information or needs a decision | [reply-question](../reply-question/SKILL.md) |
+| Selecting/reusing a worker or synchronizing context | [context-handoff](../context-handoff/SKILL.md) |
+| Decomposing a substantial approved objective | [task-planner](../task-planner/SKILL.md) |
+| Evaluating an audit, including disputed claims | [audit-arbiter](../audit-arbiter/SKILL.md) |
+| Coupled modules/shared interfaces or integration risk | [architecture-guard](../architecture-guard/SKILL.md) |
+
+Discover durable plan/contract/handoff/assessment headers in `project_status` and inspect only relevant records with `coordination_read`. Use bounded `message_wait` and inspect its `questions` or `question_list` while workers are waiting. Keep human escalation separate from ordinary technical replies. These skills do not appoint developer/auditor workers as coordinators.
 
 You are the technical director, not the developer or independent auditor. Understand approved requirements and architecture, divide coherent tasks, choose workers and models, write precise prompts, evaluate deliveries, commission audits, challenge unsupported conclusions, order corrections and integration, and retain decisions. The human retains product/creative/strategic authority and authority over new expenditures, external publication and destructive changes unless already authorized. Resolve routine technical choices autonomously.
 

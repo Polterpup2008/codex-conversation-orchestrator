@@ -11,6 +11,9 @@ This local tool trusts the OS user and operator. Scopes, leases, role policies a
 - Interactive approvals are refused. No API-key fallback, permanent deletion or automatic uncertain-message resend exists.
 - Archive requires idle owned workers and resolved work; production requires a reason. The coordinator cannot archive itself.
 - Production acceptance requires independent audit identity, delivery/revision binding, a leading actual verdict and unchanged listed artifact hashes.
+- Only the hosted `orchestrator_question` dynamic tool routes ordinary active-turn questions. Native user-input, permission/command/file approval, connector elicitation and unknown dynamic tools remain refused. A question or skill grants no authority and cannot authorize secrets or irreversible actions.
+- Active replies bind the exact transport generation and call identity. Unknown responses are not replayed. Completed-turn continuations retain original task/audit bindings and recover only when the durable outbox proves dispatch never began.
+- Plans validate ownership, dependencies, contract revisions and declared write paths. Claims prevent overlap among declared planned writes while outcomes are unresolved; they do not prove complete declarations or source compatibility. Coordinator evidence and meaningful integration tests remain necessary.
 
 The Codex sandbox is not a container guaranteeing confidentiality of all readable files. Permissions depend on Codex and the host OS. Arbitrary managed configuration, permitted services and future runtimes need separate evaluation. Model prompts are not security controls.
 

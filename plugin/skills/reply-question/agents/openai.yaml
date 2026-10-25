@@ -1,0 +1,3 @@
+interface:
+  display_name: "Reply Worker Questions"
+  short_description: "Answer scoped questions and route human decisions"

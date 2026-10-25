@@ -13,6 +13,9 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 - Independent task audits bound to the delivery revision and current artifact SHA256 values; coordinator-driven rejection/correction/re-audit loops.
 - Canonical paths, instruction/config propagation, verified worktrees and documented native desktop attachment with a pending-work gate.
 - Controlled worker permissions, integration allowlists, bounded MCP concurrency and local transport logs.
+- Ordinary worker questions with same-turn replies through a dedicated dynamic tool, plus durable completed-turn continuation for older conversations. Native approvals remain outside this mechanism.
+- Existing-worker expertise/freshness records, hash-bound context handoffs, dependency plans, shared architecture contracts and declared write-conflict checks.
+- Evidence-based audit assessments, including insufficient evidence and disputed reports, while retaining the existing independent acceptance gate.
 
 **Compatibility:** live integration targets Windows and Codex CLI `0.164.0-alpha.11.1`. Project APIs are experimental. This controlled production-mode release has documented platform limits; it does not promise universal compatibility, unattended background coordination, hostile-tenant isolation or automatic sidebar control from a standalone MCP server. Read the [validation report](docs/VALIDATION.md).
 
@@ -23,7 +26,7 @@ Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscriptio
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.3.7
+git checkout v0.4.2
 python scripts/install.py
 codex login
 ```
@@ -41,6 +44,12 @@ See [INSTALL.md](INSTALL.md) for setup, runtime permissions, native IDs, headles
 5. The chat loads the coordination skill, calls `coordinator_register`, recovers scoped state and starts only approved work.
 
 Another project may have its own coordinator and workers using the same installation. A bound connection cannot switch projects. Production task/message/creation keys are namespaced, allowing independent reuse of short keys.
+
+The plugin is installed **once per Codex profile**, not copied into every project. Each project needs its own customized contract and explicit local coordinator grant. `bridge_status` reports the version/profile actually serving that chat; an older running chat can retain older tools. A template alone does not install tools or authorize a project.
+
+## Advanced coordination skills
+
+The main `conversation-coordinate` skill dispatches five focused workflows when relevant: `reply-question`, `context-handoff`, `task-planner`, `audit-arbiter`, and `architecture-guard`. They add no independent coordinator authority. See [skills and tool behavior](docs/ADVANCED_SKILLS.md) and the [advanced validation record](docs/ADVANCED_VALIDATION.md) for tested behavior and limits.
 
 ## Workflow
 

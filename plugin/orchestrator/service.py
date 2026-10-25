@@ -626,7 +626,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             if db.execute("SELECT 1 FROM messages m LEFT JOIN audit_links a ON a.message_key=m.key WHERE (m.task_id=? OR a.task_id=?) AND m.state IN ('preparing','sent','unknown')",(task_id,task_id)).fetchone():
                 raise BridgeError('OUTCOME_UNKNOWN','Resolve the pending delivery before cancelling.')
             db.execute("UPDATE tasks SET state='cancelled',evidence=?,revision=revision+1 WHERE id=?",(json.dumps({'cancellation_reason':reason,'previous_evidence':current['evidence']}),task_id))
-            db.execute("UPDATE questions SET state='unavailable' WHERE task_id=? AND state IN ('pending','escalated')",(task_id,))
+            db.execute("UPDATE questions SET state='unavailable' WHERE (task_id=? OR message_key IN (SELECT message_key FROM audit_links WHERE task_id=?)) AND state IN ('pending','escalated','answering')",(task_id,task_id))
         return self.registry.one('tasks','id',task_id)
 
     def task_assign(self, project_id, task_id, owner, requirements, dependencies=None,model=None,effort=None,difficulty=None,justification=None,plan_key=None):
@@ -686,6 +686,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             state = 'accepted' if verdict == 'accept' else 'rejected'
             db.execute('UPDATE tasks SET state=?,audit_verdict=?,evidence=?,revision=revision+1 WHERE id=?',
                 (state, verdict, json.dumps({'audit_message_key': audit_message_key, 'controller_evidence': evidence}), task_id))
+            db.execute("UPDATE questions SET state='unavailable' WHERE message_key IN (SELECT message_key FROM audit_links WHERE task_id=?) AND state IN ('pending','escalated','answering')",(task_id,))
         return self.registry.one('tasks', 'id', task_id)
 
     def task_recover(self, task_id, expected_revision, reason):

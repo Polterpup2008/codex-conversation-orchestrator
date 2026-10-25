@@ -1,5 +1,7 @@
 # Release validation
 
+This is the retained 0.3.7 baseline. Current advanced coordination qualification is in [ADVANCED_VALIDATION.md](ADVANCED_VALIDATION.md).
+
 Release: **0.3.7**. Validation date: 2026-10-25. This report distinguishes real runtime behavior, recorded protocol tests and remaining platform limits. Private transcripts, identifiers, databases and machine paths are deliberately excluded.
 
 ## Environment and evidence

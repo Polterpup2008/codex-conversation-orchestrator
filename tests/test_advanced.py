@@ -8,6 +8,7 @@ import test_production
 from orchestrator.auditing import artifact_hash
 from orchestrator.errors import BridgeError
 from orchestrator.questions import fallback_question
+from orchestrator.storage import fingerprint
 from orchestrator.tools import invoke
 from orchestrator.transport import AppServer
 
@@ -76,6 +77,65 @@ class AdvancedTests(unittest.TestCase):
         self.assertEqual(self.a._question(row['key'])['state'],'answering')
         result=self.a.question_reply(**args);self.assertTrue(result['recovered_before_dispatch']);self.assertEqual(len(sent),1)
         self.assertTrue(self.a.question_reply(**args)['duplicate_prevented']);self.assertEqual(len(sent),1)
+
+    def test_continuation_collision_never_reserves_or_returns_foreign_output(self):
+        question=self.question();r=self.a.registry;other=self.workers[('alpha','Auditor')]
+        r.reserve_message('alpha::answer-continuation',other,'Unrelated work',None,self.a.instance)
+        r.mark_dispatching('alpha::answer-continuation',self.a.instance);turn=str(uuid.uuid4());r.set_message('alpha::answer-continuation','sent',turn)
+        r.completed(other,{'id':turn,'status':'completed','items':[{'type':'agentMessage','text':'UNRELATED OUTPUT'}]})
+        args=dict(question_key=question['key'],answer_key='alpha::answer',answer='Use the API',authority='technical',evidence='Approved docs')
+        revision=r.one('tasks','id','alpha::task')['revision']
+        for _ in range(2):
+            with self.assertRaisesRegex(BridgeError,'continuation key'):self.a.question_reply(**args)
+            self.assertIsNone(self.a._question(question['key'])['answer_key'])
+        self.assertEqual(r.one('tasks','id','alpha::task')['revision'],revision)
+        # Old candidate state may already have reserved a colliding answer.
+        with r.connect() as db:db.execute("UPDATE questions SET state='answering',answer_key=?,answer_fingerprint=?,answer=?,reply_message_key=? WHERE key=?",('alpha::answer',fingerprint([question['key'],args['answer'],args['authority'],args['evidence']]),json.dumps({k:args[k] for k in ('answer','authority','evidence')}),'alpha::answer-continuation',question['key']))
+        with self.assertRaisesRegex(BridgeError,'different work'):self.a.question_reply(**args)
+
+    def test_verified_continuation_settles_lost_question_commit_without_resend(self):
+        question=self.question();r=self.a.registry;worker=question['thread_id'];rpc=self.a.rpc;old=rpc.call;self.a.loaded.add(worker);turn=str(uuid.uuid4());sends=[]
+        def call(method,params):
+            if method=='turn/start':sends.append(params);return {'turn':{'id':turn,'status':'inProgress'}}
+            return old(method,params)
+        rpc.call=call;args=dict(question_key=question['key'],answer_key='alpha::answer',answer='Use the API',authority='technical',evidence='Approved docs')
+        self.a.question_reply(**args)
+        with r.connect() as db:db.execute("UPDATE questions SET state='answering' WHERE key=?",(question['key'],))
+        self.assertEqual(self.a.question_reply(**args)['question']['state'],'answered')
+        with r.connect() as db:
+            db.execute("UPDATE questions SET state='answering' WHERE key=?",(question['key'],))
+            db.execute("UPDATE messages SET state='unknown' WHERE key='alpha::answer-continuation'")
+        r.reconcile_question_answer(question['key']);self.assertEqual(self.a._question(question['key'])['state'],'answering')
+        r.completed(worker,{'id':turn,'status':'completed','items':[{'type':'agentMessage','text':'Delivered'}]})
+        self.assertEqual(self.a._question(question['key'])['state'],'answered');self.assertFalse(self.a.question_list()['questions'])
+        self.assertEqual(len(sends),1)
+        task=r.one('tasks','id','alpha::task');self.a.task_cancel(task['id'],task['revision'],'Retire disposable fixture')
+        self.a._native_archive_state=lambda tid:False;self.a.conversation_resume=lambda tid:{'thread':{'status':{'type':'idle'}}}
+        self.assertTrue(self.a.conversation_archive(worker,'Completed recovery fixture')['archived'])
+
+    def auditor_question(self,text=None):
+        self.delivery('Delivered implementation');r=self.a.registry;auditor=self.workers[('alpha','Auditor')]
+        link=self.a._audit_request(r.one('conversations','thread_id',auditor),'alpha::task',[self.source()])
+        r.reserve_message('alpha::audit',auditor,'Audit',None,self.a.instance,audit_link=link)
+        r.mark_dispatching('alpha::audit',self.a.instance);turn=str(uuid.uuid4());r.set_message('alpha::audit','sent',turn)
+        content=text if text is not None else 'ORCHESTRATOR_QUESTION_JSON '+json.dumps({'question':'Which revision?','category':'requirement','sources':[]})
+        r.completed(auditor,{'id':turn,'status':'completed','items':[{'type':'agentMessage','phase':'final_answer','text':content}]})
+        return auditor,turn
+
+    def test_cancelled_task_resolves_its_auditor_question_and_allows_archive(self):
+        auditor,_=self.auditor_question();r=self.a.registry;question=self.a.question_list()['questions'][0]
+        task=r.one('tasks','id','alpha::task');self.a.task_cancel(task['id'],task['revision'],'Cancelled review scope')
+        self.assertEqual(self.a._question(question['key'])['state'],'unavailable');self.assertFalse(self.a.question_list()['questions'])
+        with self.assertRaisesRegex(BridgeError,'no longer answerable'):self.a.question_reply(question['key'],'alpha::answer','Old revision','documented_requirement','Old docs')
+        self.a._native_archive_state=lambda tid:False;self.a.conversation_resume=lambda tid:{'thread':{'status':{'type':'idle'}}}
+        self.assertTrue(self.a.conversation_archive(auditor,'Cancelled review scope')['archived'])
+
+    def test_late_auditor_history_cannot_reopen_cancelled_scope(self):
+        _,turn=self.auditor_question('');r=self.a.registry;task=r.one('tasks','id','alpha::task')
+        self.a.task_cancel(task['id'],task['revision'],'Cancel before history hydration')
+        full={'id':turn,'status':'completed','items':[{'type':'agentMessage','text':'ORCHESTRATOR_QUESTION_JSON '+json.dumps({'question':'Which revision?','category':'requirement','sources':[]})}]}
+        r.set_message('alpha::audit','completed',result=full);r.reconcile_questions('alpha::audit')
+        self.assertFalse(self.a.question_list()['questions']);self.assertEqual(self.a.question_list(include_resolved=True)['questions'][0]['state'],'unavailable')
 
     def test_hydrated_fallback_changes_waiting_state_only_once(self):
         worker,turn=self.delivery('')

@@ -24,6 +24,19 @@ def fallback_question(turn):
     except (ValueError,BridgeError):return None
 
 
+def continuation_request(row,link=None):
+    payload=json.loads(row['payload']);answer=json.loads(row['answer'])
+    text=f'Answer to your question: {payload["question"]}\n{answer["answer"]}\nAuthority: {answer["authority"]}. Evidence: {answer["evidence"]}\nContinue the original assigned task or independent audit; preserve its requirements and your worker role.'
+    intent={'audit_task_id':link['task_id'],'audit_artifacts':json.loads(link['artifacts'])} if link else {}
+    return text,intent
+
+
+def continuation_matches(row,message,link=None):
+    text,intent=continuation_request(row,link)
+    digest=fingerprint([row['thread_id'],text,row['task_id']]+([intent] if intent else []))
+    return (message['key']==row['reply_message_key'] and message['thread_id']==row['thread_id'] and message['task_id']==row['task_id'] and message['text']==text and message['fingerprint']==digest)
+
+
 class QuestionOperations:
     def _question(self,key):
         row=self.registry.one('questions','key',key);self._project(row['project_id']);return row
@@ -78,12 +91,17 @@ class QuestionOperations:
         digest=fingerprint([question_key,answer,authority,evidence])
         if row['answer_key']:
             if row['answer_key']!=answer_key or row['answer_fingerprint']!=digest:raise BridgeError('IDEMPOTENCY_CONFLICT','This question already has a different reserved answer.')
-            existing=self.registry.rows('SELECT key FROM messages WHERE key=?',(row['reply_message_key'],)) if row['reply_message_key'] else []
+            existing=self.registry.rows('SELECT * FROM messages WHERE key=?',(row['reply_message_key'],)) if row['reply_message_key'] else []
+            if existing:
+                links=self.registry.rows('SELECT * FROM audit_links WHERE message_key=?',(row['message_key'],))
+                if not continuation_matches(row,existing[0],links[0] if links else None):raise BridgeError('IDEMPOTENCY_CONFLICT','The reserved continuation key belongs to different work; no unrelated result was returned.')
             if row['mode']=='turn_based' and row['state']=='answering' and not existing:
                 # No durable message reservation proves no turn/start occurred.
                 # Retry the same continuation identity, never an uncertain send.
                 return self._continue_question(row,answer,authority,evidence,recovered=True)
-            return {'question':row,'duplicate_prevented':True,'continuation':self.message_status(row['reply_message_key']) if existing else None,'note':'A reserved active response is not replayed. Reconcile its original turn if forwarding was uncertain.'}
+            continuation=self.message_status(row['reply_message_key']) if existing else None
+            if existing:self.registry.reconcile_question_answer(row['key'])
+            return {'question':self._question(question_key),'duplicate_prevented':True,'continuation':continuation,'note':'Only the verified original continuation is observed. Uncertain dispatches are never replayed; failed/interrupted continuations require explicit task recovery.'}
         if row['state'] not in ('pending','escalated'):raise BridgeError('QUESTION_STATE','The originating question is no longer answerable.')
         if payload['category'] in ('creative','strategic') and authority not in ('documented_requirement','human_decision'):
             raise BridgeError('HUMAN_AUTHORITY_REQUIRED','Unresolved creative/strategic choices require documented authority or the human decision.')
@@ -100,6 +118,7 @@ class QuestionOperations:
             if newer:raise BridgeError('STALE_QUESTION','Newer work exists. Reconcile it before answering the old question.')
         reply_key=answer_key+'-continuation' if row['mode']=='turn_based' else None
         with self.registry.transaction() as db:
+            if reply_key and db.execute('SELECT 1 FROM messages WHERE key=?',(reply_key,)).fetchone():raise BridgeError('IDEMPOTENCY_CONFLICT','This continuation key already belongs to an existing message. Choose a distinct answer key before reserving an answer.')
             if db.execute("UPDATE questions SET state='answering',answer_key=?,answer_fingerprint=?,answer=?,reply_message_key=? WHERE key=? AND state IN ('pending','escalated') AND answer_key IS NULL",(answer_key,digest,json.dumps({'answer':answer,'authority':authority,'evidence':evidence}),reply_key,question_key)).rowcount!=1:
                 raise BridgeError('QUESTION_EXPIRED','Question state changed before answer reservation; no response was sent.')
             if row['mode']=='turn_based' and row['task_id']:
@@ -128,7 +147,7 @@ class QuestionOperations:
             link=links[0];task=self.registry.one('tasks','id',link['task_id'])
             self._validate_audit_link(task,source)
             audit_args={'audit_task_id':link['task_id'],'audit_artifacts':json.loads(link['artifacts'])}
-        payload=json.loads(row['payload'])
-        continuation=self.message_send(row['thread_id'],f'Answer to your question: {payload["question"]}\n{answer}\nAuthority: {authority}. Evidence: {evidence}\nContinue the original assigned task or independent audit; preserve its requirements and your worker role.',row['reply_message_key'],task_id=row['task_id'],**audit_args)
+        text,_=continuation_request(row,links[0] if links else None)
+        continuation=self.message_send(row['thread_id'],text,row['reply_message_key'],task_id=row['task_id'],**audit_args)
         with self.registry.connect() as db:db.execute("UPDATE questions SET state='answered' WHERE key=?",(row['key'],))
         return {'question':self._question(row['key']),'continuation':continuation,'recovered_before_dispatch':recovered,'note':'Same continuation identity; original task/audit binding retained. Completion and acceptance require actual evidence.'}

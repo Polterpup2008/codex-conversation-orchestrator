@@ -206,6 +206,7 @@ class Registry:
                     latest=db.execute('SELECT key FROM messages WHERE task_id=? ORDER BY created DESC LIMIT 1',(full['task_id'],)).fetchone()
                     if latest and latest['key']==key:
                         db.execute("UPDATE tasks SET state='waiting_input',revision=revision+1 WHERE id=? AND state='needs_audit'",(full['task_id'],))
+            self._settle_question_answers(db,key)
 
     def mark_dispatching(self, key, owner_token=None):
         with self.transaction() as db:
@@ -241,6 +242,22 @@ class Registry:
             if row['task_id']:
                 task_state = 'waiting_input' if question else 'needs_audit' if turn['status'] == 'completed' else 'blocked'
                 db.execute('UPDATE tasks SET state=?,revision=revision+1 WHERE id=?', (task_state, row['task_id']))
+            self._settle_question_answers(db,row['key'])
+
+    def _settle_question_answers(self,db,message_key):
+        from .questions import continuation_matches
+        message=db.execute('SELECT * FROM messages WHERE key=?',(message_key,)).fetchone()
+        if not message:return
+        state='answered' if message['state']=='completed' or (message['state']=='sent' and message['turn_id']) else 'unavailable' if message['state'] in ('failed','interrupted') else None
+        if not state:return
+        for row in db.execute("SELECT * FROM questions WHERE reply_message_key=? AND mode='turn_based' AND state='answering'",(message_key,)).fetchall():
+            link=db.execute('SELECT * FROM audit_links WHERE message_key=?',(row['message_key'],)).fetchone()
+            if continuation_matches(row,message,link):db.execute('UPDATE questions SET state=? WHERE key=?',(state,row['key']))
+
+    def reconcile_question_answer(self,key):
+        with self.transaction() as db:
+            row=db.execute('SELECT reply_message_key FROM questions WHERE key=?',(key,)).fetchone()
+            if row and row['reply_message_key']:self._settle_question_answers(db,row['reply_message_key'])
 
     def _classify_question(self,db,message,turn):
         from .questions import fallback_question
@@ -249,6 +266,11 @@ class Registry:
         worker=db.execute('SELECT project_id FROM conversations WHERE thread_id=?',(message['thread_id'],)).fetchone()
         key=worker['project_id']+'::question-'+fingerprint([message['key'],turn['id']])[:24]
         db.execute("INSERT OR IGNORE INTO questions(key,project_id,thread_id,message_key,task_id,turn_id,mode,payload,created) VALUES(?,?,?,?,?,?,'turn_based',?,?)",(key,worker['project_id'],message['thread_id'],message['key'],message['task_id'],turn['id'],json.dumps(question),time.time()))
+        linked=db.execute('SELECT a.task_revision,t.revision,t.state FROM audit_links a JOIN tasks t ON t.id=a.task_id WHERE a.message_key=?',(message['key'],)).fetchone()
+        task=db.execute('SELECT state FROM tasks WHERE id=?',(message['task_id'],)).fetchone() if message['task_id'] else None
+        if (linked and (linked['state']!='needs_audit' or linked['task_revision']!=linked['revision'])) or (task and task['state'] in ('accepted','cancelled')):
+            db.execute("UPDATE questions SET state='unavailable' WHERE key=? AND state IN ('pending','escalated','answering')",(key,))
+            return None
         return question
 
     def reconcile_questions(self,key):

@@ -17,7 +17,7 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 - Existing-worker expertise/freshness records, hash-bound context handoffs, dependency plans, shared architecture contracts and declared write-conflict checks.
 - Evidence-based audit assessments, including insufficient evidence and disputed reports, while retaining the existing independent acceptance gate.
 
-**Compatibility:** live integration targets Windows and Codex CLI `0.164.0-alpha.11.1`. Project APIs are experimental. This controlled production-mode release has documented platform limits; it does not promise universal compatibility, unattended background coordination, hostile-tenant isolation or automatic sidebar control from a standalone MCP server. Read the [validation report](docs/VALIDATION.md).
+**Compatibility:** live integration targets Windows and Codex CLI `0.164.0-alpha.11.1`. Project APIs are experimental. This controlled production-mode release has documented platform limits; it does not promise universal compatibility, unattended background coordination, hostile-tenant isolation or automatic sidebar control from a standalone MCP server. Read the [advanced validation report](docs/ADVANCED_VALIDATION.md) and retained [baseline qualification](docs/VALIDATION.md).
 
 ## Install
 
@@ -26,7 +26,7 @@ Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscriptio
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.4.2
+git checkout v0.4.3
 python scripts/install.py
 codex login
 ```

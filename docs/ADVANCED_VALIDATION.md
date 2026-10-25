@@ -1,4 +1,4 @@
-# Advanced release validation — candidate 0.4.2
+# Advanced release validation — candidate 0.4.3
 
 Qualification is in progress until final independent review, remaining live arbitration and clean-package checks finish. This file is updated before publication; pending checks are not advertised as passed.
 

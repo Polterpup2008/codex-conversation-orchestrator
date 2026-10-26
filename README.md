@@ -8,6 +8,7 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 
 - Independent conversation IDs and histories, reuse, bounded waits, interruption and reversible archive/unarchive.
 - Explicit live local execution versus external ownership, avoiding false interruption reports from another App Server's persisted history; see [turn tracking](docs/LIVE_TURN_TRACKING.md).
+- Exact operator-registered external artifact directories, with source roots unchanged, hash-bound audits, read-only auditors and an idle same-chat handoff from older MCP connections without restarting other projects; see [artifact directories](docs/ARTIFACT_ROOTS.md).
 - Activation from a verified direct human appointment, without a second permission question; one coordinator connection per project, scoped records/keys and cross-project guards. Existing local grants remain supported.
 - Persistent SQLite tasks, ownership, dependencies, decisions, audit verdicts, delivery state and restart reconciliation.
 - Dynamic model/effort discovery, difficulty routing, saved worker preferences, task overrides and per-turn overrides with observed execution settings.
@@ -25,6 +26,8 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 ## Install
 
 Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscription sign-in for workers. Git is needed to clone and use worktrees. No third-party Python packages or API keys are required.
+
+Version 0.6 Windows worker execution requires native MXC support and fails closed without it. The transport selects MXC only for its own process; saved Windows settings and other active bridges remain unchanged. Read the [Windows requirement and project-only handoff](docs/ARTIFACT_ROOTS.md).
 
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git

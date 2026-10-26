@@ -21,10 +21,10 @@ ALLOWED=['.gitignore','.agents/plugins/marketplace.json','.github/workflows/ci.y
          'plugin/skills/architecture-guard/SKILL.md','plugin/skills/architecture-guard/agents/openai.yaml',
          'docs/*.md','templates/orchestrator/README.md','templates/orchestrator/orchestrator.md',
          'templates/orchestrator/ORCHESTRATOR_PROMPT.md','scripts/install.py','scripts/authorize.py','scripts/check_release.py',
-         'tests/test_registry.py','tests/test_upgrade.py','tests/test_production.py','tests/test_advanced.py','tests/test_autonomy.py','tests/legacy_fixture.py','tests/mcp_client.py','tests/live_smoke.py']
+         'tests/test_registry.py','tests/test_upgrade.py','tests/test_production.py','tests/test_advanced.py','tests/test_autonomy.py','tests/test_artifacts.py','tests/test_handoff.py','tests/legacy_fixture.py','tests/mcp_client.py','tests/live_smoke.py']
 REQUIRED=['README.md','INSTALL.md','LICENSE','ORCHESTRATOR_PROMPT.md','orchestrator.md',
           'templates/orchestrator/README.md','templates/orchestrator/orchestrator.md','templates/orchestrator/ORCHESTRATOR_PROMPT.md',
-          'docs/VALIDATION.md','plugin/plugin.json','plugin/mcp.json','plugin/server.py',
+          'docs/VALIDATION.md','plugin/plugin.json','plugin/mcp.json','plugin/server.py','tests/test_artifacts.py','tests/test_handoff.py',
           'plugin/skills/conversation-coordinate/SKILL.md','scripts/install.py','scripts/authorize.py','tests/legacy_fixture.py']
 SECRET_PATTERNS=[r'gh[pousr]_[A-Za-z0-9]{20,}',r'github_pat_[A-Za-z0-9_]{20,}',
                  r'sk-(?:proj-)?[A-Za-z0-9_-]{20,}',r'-----BEGIN [A-Z ]*PRIVATE KEY-----']

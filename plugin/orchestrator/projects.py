@@ -46,6 +46,9 @@ def allowed_workspace(root,workspace):
 
 class ProjectOperations:
     def _workspace_exclusive(self,project_id,cwd):
+        from .artifacts import reserved_artifact_overlap
+        with self.registry.connect() as db:
+            if reserved_artifact_overlap(db,cwd):raise BridgeError('PROJECT_OVERLAP','A worker/source workspace cannot overlap a reserved artifact directory.')
         associations=self.registry.rows('SELECT id AS project_id,root AS workspace FROM projects WHERE id<>? UNION ALL SELECT project_id,workspace FROM conversations WHERE project_id<>? AND workspace IS NOT NULL UNION ALL SELECT project_id,workspace FROM creations WHERE project_id<>? AND workspace IS NOT NULL AND state=\'preparing\'',(project_id,project_id,project_id))
         for other in associations:
             if contained(cwd,other['workspace']) or contained(other['workspace'],cwd):

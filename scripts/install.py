@@ -165,7 +165,7 @@ def main():
         approve_coordination_tools(home)
         print('Coordination tools pre-approved for this plugin only; project, host and sandbox permission controls remain enforced.')
     print(f'Installed with {version} and Python {sys.version.split()[0]}.')
-    print('Reload the Codex host to refresh tool inventories, then resume the SAME designated chats. Sign in with ChatGPT using codex login if needed before running workers.')
+    print('Installation preserves already-loaded bridge processes. For an idle project, use project_bridge.py --prepare-handoff then --handoff in its SAME designated chat; see docs/ARTIFACT_ROOTS.md. A host refresh may be deferred until all projects are idle. Sign in with ChatGPT using codex login if needed before running workers.')
     print('A direct human appointment activates its exact project through coordinator_activate; no second local grant is needed. Installation alone appoints nobody. No API-key fallback.')
 
 

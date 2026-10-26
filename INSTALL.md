@@ -3,6 +3,7 @@
 ## Requirements
 
 - Windows is the primary validation platform. See the release validation for the exact tested build; other platforms require additional live validation.
+- Version 0.6 requires MXC for Windows worker execution, selected per App Server process with no legacy fallback or saved configuration change. Check device support using the official one-command test linked in [artifact directories and handoff](docs/ARTIFACT_ROOTS.md).
 - Official Codex CLI 0.164.0 or newer, with plugin and App Server support. The tested alpha exposes experimental project APIs; future versions can change them.
 - Python 3.11 or newer. The implementation uses the standard library only.
 - The generated Windows launcher requires an ASCII interpreter path; other interpreter paths fail with an actionable installer error. Unicode project paths remain a separate, unqualified compatibility case.
@@ -43,7 +44,7 @@ To explicitly pre-approve routine calls to this plugin only, install with `pytho
 
 Installation is shared by chats using the same `CODEX_HOME` profile. **Do not copy the plugin/cache into individual project folders.** Copy the three universal Markdown files in [templates/orchestrator/](templates/orchestrator/) into each project's `orchestrator/` folder and designate its coordinator directly. Keep project-specific decisions and state separate. `bridge_status` shows the actually loaded version and skill/profile paths. An unregistered connection can show `experiment_only` even though the package supports production. Activate the already appointed chat; do not turn this state into a redundant human grant question. A different profile or explicit project plugin-disable setting needs its own configuration check.
 
-The 0.5 release adds appointment activation and runtime preflight (44 MCP tools total), retaining the five specialized skills and schema 10. Existing authorizations/IDs remain valid. Old active question responses cannot be replayed on a new transport generation: finish or reconcile pending work before upgrading/restarting, retain original IDs/keys, and use a fresh continuation only after the original outcome is known. No API key is required.
+The 0.6 release retains 44 MCP tools and five specialized skills, adds exact external artifact reservations and schema 11 with a private upgrade snapshot, and preserves authorizations/IDs. An older loaded connection can use the [same-chat project bridge](docs/ARTIFACT_ROOTS.md#an-older-loaded-mcp-connection-hand-off-only-this-project) after its own sends resolve, without restarting other projects. Old active question responses cannot be replayed on a new transport generation: finish or reconcile pending work, retain original IDs/keys, and use a fresh continuation only after the original outcome is known. No API key is required.
 
 For an isolated installation-profile test:
 

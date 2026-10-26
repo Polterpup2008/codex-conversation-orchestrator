@@ -19,7 +19,7 @@ class AdvancedTests(unittest.TestCase):
     def test_serving_version_diagnostics_do_not_start_remote_transport(self):
         self.assertIsNone(self.a._transport)
         status=invoke(self.a,'bridge_status',{})
-        self.assertFalse(status['per_project_plugin_copy_required']);self.assertEqual(status['registry_schema'],10)
+        self.assertFalse(status['per_project_plugin_copy_required']);self.assertEqual(status['registry_schema'],11)
         self.assertIsNone(self.a._transport)
 
     def test_terminal_active_turn_expires_uncertain_answer_attempt(self):

@@ -9,11 +9,11 @@ from orchestrator.service import Service
 from orchestrator.tools import TOOLS, invoke
 
 
-def main():
+def main(service=None):
     if hasattr(sys.stdin,'reconfigure'):
         sys.stdin.reconfigure(encoding='utf-8')
         sys.stdout.reconfigure(encoding='utf-8',line_buffering=True)
-    service=Service()
+    service=service or Service()
     output_guard=threading.Lock();state_guard=threading.Lock()
     inflight=set();capacity=threading.BoundedSemaphore(16);initialized=False
     def write(packet):

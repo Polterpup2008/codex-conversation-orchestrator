@@ -21,6 +21,7 @@ from .auditing import AuditOperations
 from .questions import QuestionOperations,QUESTION_TOOL
 from .coordination import CoordinationOperations
 from .runtime import RuntimeOperations
+from .artifacts import ArtifactOperations
 
 TERMINAL = ('completed', 'failed', 'interrupted')
 SOURCES = ['cli', 'vscode', 'exec', 'appServer', 'unknown']
@@ -34,7 +35,7 @@ def identifier(value):
     return value
 
 
-class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOperations,QuestionOperations,CoordinationOperations,RuntimeOperations):
+class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOperations,QuestionOperations,CoordinationOperations,RuntimeOperations,ArtifactOperations):
     def bridge_status(self):
         from . import __version__
         root=pathlib.Path(__file__).resolve().parents[1]
@@ -54,6 +55,12 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                     'command':[sys.executable,'-I','-B','-S',str(root/'caller.py'),'--challenge',self.caller_challenge],
                     'instruction':'When MCP lacks CODEX_THREAD_ID, execute this read-only command inside THIS chat shell, then call coordinator_activate on this same connection. It prints a nonce-bound identity into this chat native tool history; no registry write or human grant.'},
                 'routine_runtime_preflight':'runtime_check probes both role policies and can repair standard per-user Windows Python read/execute access.',
+                'external_artifact_roots_supported':True,
+                'windows_worker_backend':'mxc_required_no_legacy_fallback' if os.name=='nt' else 'platform_sandbox',
+                'artifact_operator':{'command':[sys.executable,'-I','-B','-S',str(root/'artifact.py')],
+                    'instruction':'For an already human-approved artifact location, run grant PROJECT_ID EXACT_DIRECTORY --reason EXISTING_AUTHORITY [--create] in the coordinator/operator shell after this project sends resolve. This is not a worker self-grant. No new human permission is needed for an existing approval. Use revoke with the same exact directory to remove it.'},
+                'project_bridge':{'command':[sys.executable,'-I','-B','-S',str(root/'project_bridge.py')],
+                    'instruction':'Compatibility for an older loaded MCP: after this project sends resolve, run this helper --project ORIGINAL_ID --prepare-handoff in the SAME coordinator native shell. Execute its exact standalone release command, then within five minutes start --project ORIGINAL_ID --handoff with persistent stdin. It serves current MCP stdio, fences only the old project bridge and preserves IDs. No app/global restart or new nomination. Do not close it while sends run.'},
                 'note':'This is the version actually serving this MCP connection. Old chats can retain older tool processes. Installation and merely reading a template do not appoint a coordinator.'}
 
     def __init__(self, data_dir=None, transport_factory=AppServer):
@@ -70,6 +77,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         self._closed = False
         self.resume_guard = threading.Lock()
         self.loaded = set()
+        self.loaded_artifacts = {}
         self.instance = str(uuid.uuid4())
         self.caller_challenge = uuid.uuid4().hex
         self.stop_heartbeat = threading.Event()
@@ -95,7 +103,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 generation=str(uuid.uuid4()) if self.transport_factory is AppServer else None
                 if self.transport_factory is AppServer:options.update(on_question=self._capture_question,generation=generation)
                 self._transport = self.transport_factory(self.data_dir/'logs',lambda method,params:self._event(method,params,generation),**options)
-                self.loaded.clear()
+                self.loaded.clear();self.loaded_artifacts.clear()
             return self._transport
 
     def _event(self,method,params,generation=None):
@@ -119,7 +127,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                     if self._transport.pending or self._transport.active:raise BridgeError('BRIDGE_BUSY','Another App Server request or turn is still pending.')
                     self._transport.closed=True
                 self._transport.close();self._transport=None
-            self.loaded.clear()
+            self.loaded.clear();self.loaded_artifacts.clear()
         return {'released':True,'histories_preserved':True,'note':'The next remote operation reconnects lazily. Desktop attachment can proceed without this bridge holding idle writer locks.'}
 
     def _other_owner(self, row):
@@ -284,6 +292,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             raise BridgeError('EXISTING_REPOSITORY', 'This proof of concept cannot coordinate an existing repository.')
         if path.exists() and any(path.iterdir()):
             raise BridgeError('WORKSPACE_NOT_EMPTY', 'Create a new empty temporary workspace.')
+        self._workspace_exclusive(project_id,str(path))
         path.mkdir(parents=True, exist_ok=True)
         if os.name == 'nt':
             # Sandbox worker accounts create files with a different owner. Preserve
@@ -320,12 +329,13 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         return result
 
 
-    def _role_instructions(self,role,root,cwd,inherited=''):
+    def _role_instructions(self,role,root,cwd,inherited='',artifact_roots=()):
         conversation_rule=('Coordinate regular persistent workers through the orchestrator tools. You are the technical director, not a developer or auditor; delegate implementation and independent auditing. Do not create unrelated conversations. '
             if role.lower()=='coordinator' else 'Do not create other conversations. ')
         return (inherited+f'\nAssigned role: {role}. Work only on the explicitly authorized project. '
-            f'Authorized project root: {root}. Worker workspace: {cwd}. Modify only the worker workspace. '
-            'Auditors may inspect artifacts in other registered workspaces of this same project. Do not access unrelated projects, spawn subagents, or contact people. '
+            f'Authorized project root: {root}. Worker workspace: {cwd}. Authorized external artifact directories: {json.dumps(list(artifact_roots))}. '
+            'Writers may modify only their worker workspace and those exact artifact directories; keep source files in the workspace. '
+            'Auditors/reviewers/architects remain read-only, including external artifacts. Auditors may inspect registered artifacts of this same project. Do not access unrelated projects, spawn subagents, or contact people. '
             +conversation_rule+'Resolve routine technical choices within your assigned task; do not ask the human for repeated work/validation/Python permission. Refer ordinary uncertainty and environment failures to your coordinator. '
             f'The host Python interpreter is {sys.executable}; it may be inaccessible in a worker sandbox. '
             'Use the project runtime with -B. For stdlib-only diagnostics an accessible installed or bundled runtime may help; never silently substitute it for the project dependency/GPU runtime. Report the exact executable and failure so the coordinator can run runtime_check and repair supported access without a redundant human confirmation. '
@@ -349,13 +359,15 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         effective=self.rpc.call('config/read',{'cwd':cwd,'includeLayers':False})['config']
         inherited_instructions=effective.get('developer_instructions') or ''
         worker_config=integration_policy(effective,json.loads(self.project_policy['integrations']) if self.project_policy else ())
-        worker_config.update({'model_reasoning_effort':route['effort'],'sandbox_workspace_write':{'network_access':False,'writable_roots':[cwd]}})
+        artifact_roots=self._artifact_roots(project)
+        worker_config.update({'model_reasoning_effort':route['effort'],'sandbox_workspace_write':{'network_access':False,'writable_roots':[cwd,*artifact_roots],'exclude_tmpdir_env_var':True,'exclude_slash_tmp':True}})
+        if any(r in role.lower() for r in ('audit','architect','review')):worker_config['sandbox_workspace_write']['writable_roots']=[]
         params={
             'cwd': cwd, 'ephemeral': False, 'approvalPolicy': 'never',
             'sandbox': 'read-only' if any(r in role.lower() for r in ('audit','architect','review')) else 'workspace-write', 'modelProvider': 'openai',
             'model':route['model'],'config':worker_config,'allowProviderModelFallback':False,
             'serviceName': 'conversation_orchestrator',
-            'developerInstructions':self._role_instructions(role,project['root'],cwd,inherited_instructions)}
+            'developerInstructions':self._role_instructions(role,project['root'],cwd,inherited_instructions,artifact_roots)}
         params['dynamicTools']=[QUESTION_TOOL]
         if desktop_id and not project.get('desktop_ui_project_id'):
             params['projectId']=desktop_id
@@ -372,6 +384,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             db.execute("INSERT INTO creations(key,fingerprint,state,thread_id,project_id,workspace) VALUES(?,?,'preparing',NULL,?,?)", (create_key, digest,project_id,cwd))
         result = rpc.call('thread/start', params)
         thread_id = result['thread']['id']; self.loaded.add(thread_id)
+        self.loaded_artifacts[thread_id]=tuple(artifact_roots)
         with self.registry.transaction() as db:
             db.execute('INSERT INTO conversations(thread_id,project_id,role,name,capabilities,workspace,desktop_project_id,model,effort,routing_justification,desktop_sync_state) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                 (thread_id, project_id, role, name, json.dumps(capabilities or []),cwd,desktop_id,route['model'],route['effort'],json.dumps(route),
@@ -416,16 +429,20 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         # Resume is serialized locally so concurrent callers cannot double-load a thread.
         with self.resume_guard:
             rpc = self.rpc
-            if thread_id not in self.loaded:
+            artifact_roots=self._artifact_roots(project)
+            if thread_id not in self.loaded or self.loaded_artifacts.get(thread_id,())!=tuple(artifact_roots):
                 cwd=worker.get('workspace') or project['root']
                 effective=rpc.call('config/read',{'cwd':cwd,'includeLayers':False})['config']
                 inherited=effective.get('developer_instructions') or ''
                 worker_config=integration_policy(effective,json.loads(self.project_policy['integrations']) if self.project_policy else ())
+                worker_config['sandbox_workspace_write']={'network_access':False,'writable_roots':[cwd,*artifact_roots],'exclude_tmpdir_env_var':True,'exclude_slash_tmp':True}
+                if any(r in worker['role'].lower() for r in ('audit','architect','review')):worker_config['sandbox_workspace_write']['writable_roots']=[]
                 result = rpc.call('thread/resume', {'threadId': thread_id, 'excludeTurns': True,
                     'cwd':cwd, 'approvalPolicy': 'never',
-                    'developerInstructions':self._role_instructions(worker['role'],project['root'],cwd,inherited),
+                    'developerInstructions':self._role_instructions(worker['role'],project['root'],cwd,inherited,artifact_roots),
                     'sandbox': 'read-only' if any(r in worker['role'].lower() for r in ('audit','architect','review')) else 'workspace-write', 'modelProvider': 'openai','config':worker_config})
                 self.loaded.add(thread_id)
+                self.loaded_artifacts[thread_id]=tuple(artifact_roots)
             else:
                 result = rpc.call('thread/read', {'threadId': thread_id, 'includeTurns': False})
         return result
@@ -485,9 +502,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             dispatched = True
             turn = self.rpc.call('turn/start', {'threadId': thread_id,
                 'model':route['model'],'effort':route['effort'],
-                'sandboxPolicy':({'type':'readOnly','networkAccess':False} if any(r in worker['role'].lower() for r in ('audit','architect','review')) else
-                    {'type':'workspaceWrite','writableRoots':[worker.get('workspace') or self._project(worker['project_id'])['root']],
-                     'networkAccess':False,'excludeTmpdirEnvVar':True,'excludeSlashTmp':True}),
+                'sandboxPolicy':self._worker_sandbox(worker,self._project(worker['project_id'])),
                 'clientUserMessageId': str(uuid.uuid5(uuid.NAMESPACE_URL, message_key)),
                 'input': [{'type': 'text', 'text': f'{marker}\nAssigned registry role: {worker["role"]}\n{message}'}]})['turn']
             # Acknowledgment can precede turn/started, and persisted history can
@@ -761,6 +776,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             workers={w['thread_id'] for w in result['workers']}
             result['unresolved_messages']=[r for r in result['unresolved_messages'] if r['thread_id'] in workers]
         visible={p['id'] for p in result['projects']}
+        result['artifact_roots']=[r for r in self.registry.rows('SELECT project_id,root,enabled,reason FROM artifact_roots') if r['project_id'] in visible]
         result['coordination_records']=[r for r in self.registry.rows('SELECT key,project_id,kind,revision FROM coordination_records') if r['project_id'] in visible]
         return result
 

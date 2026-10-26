@@ -23,6 +23,8 @@ def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
     if not headless and not desktop_ui_id:
         raise BridgeError('DESKTOP_PROJECT_REQUIRED', 'Supply the native desktop project ID, or explicitly select headless mode.')
     with registry.transaction() as db:
+        from .artifacts import reserved_artifact_overlap
+        if reserved_artifact_overlap(db,root):raise BridgeError('PROJECT_OVERLAP','A source root cannot overlap a reserved artifact directory.')
         if db.execute('SELECT 1 FROM control_lock').fetchone():
             raise BridgeError('PROJECT_BUSY','A control operation is in progress. Close a crashed bridge and reconcile it before changing grants.')
         if db.execute("SELECT 1 FROM creations WHERE state='preparing' AND (project_id=? OR project_id IS NULL)",(project_id,)).fetchone() or db.execute('SELECT 1 FROM operations o JOIN conversations c ON c.thread_id=o.thread_id WHERE c.project_id=?',(project_id,)).fetchone():
@@ -166,7 +168,7 @@ class AuthorizationOperations:
             # Reconnect in the granted root so project configuration is discovered
             # before applying the explicit integration policy to worker sessions.
             if self._transport:
-                self._transport.close();self._transport=None;self.loaded.clear()
+                self._transport.close();self._transport=None;self.loaded.clear();self.loaded_artifacts.clear()
         return {'project': project, 'coordinator_thread_id': coordinator_thread_id,
                 'connection_scope': project_id, 'authorization': 'local_operator_grant',
                 'desktop_mode': 'headless' if grant[0]['headless'] else 'native_attachment_required'}

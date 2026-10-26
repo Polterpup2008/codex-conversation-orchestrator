@@ -35,7 +35,7 @@ def integration_policy(config,allow_integrations=()):
 
 
 class AppServer:
-    def __init__(self, data_dir, on_event=lambda *_: None, executable=None, workspace=None, allow_integrations=(),on_question=None,generation=None):
+    def __init__(self, data_dir, on_event=lambda *_: None, executable=None, workspace=None, allow_integrations=(),on_question=None,generation=None,strict_windows_sandbox=None):
         self.pending, self.completed, self.active = {}, {}, set()
         self.guard, self.write_guard = threading.RLock(), threading.Lock()
         self.changed = threading.Condition(self.guard)
@@ -48,6 +48,12 @@ class AppServer:
         # Workers need shell/files only. Disabling inherited integrations prevents recursive
         # bridge startups and unrelated MCP side effects; this is a process-local override.
         command = [executable, 'app-server', '--listen', 'stdio://']
+        # Legacy elevated workers share an OS account: OWNER RIGHTS can leave
+        # their new files writable to later read-only/foreign-project commands.
+        # MXC enforces the per-command policy independently of creator ACLs.
+        # Explicit selection fails if unsupported; never silently weaken it.
+        self.strict_windows_sandbox = os.name=='nt' if strict_windows_sandbox is None else bool(strict_windows_sandbox)
+        if self.strict_windows_sandbox:command += ['-c','windows.sandbox="mxc"']
         command += ['-c','features.hooks=false','-c','features.multi_agent=false','-c','features.apps=false']
         home = pathlib.Path(os.environ.get('CODEX_HOME', pathlib.Path.home()/'.codex'))
         config_files=[home/'config.toml']

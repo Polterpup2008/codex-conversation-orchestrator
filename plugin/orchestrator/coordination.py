@@ -3,7 +3,6 @@ import json
 import time
 from .errors import BridgeError
 from .projects import canonical,contained
-from .auditing import artifact_hash
 from .storage import fingerprint
 
 
@@ -49,9 +48,8 @@ class CoordinationOperations:
             profile=json.loads(rows[0]['payload']) if rows else {'expertise':[],'sources':[],'status':'active'}
             if not include_retired and (worker['archived'] or profile['status']=='retired'):continue
             fresh=True
-            for source in profile['sources']:
-                try:fresh=fresh and artifact_hash(source['path'])==source['sha256']
-                except OSError:fresh=False
+            try:self._audit_artifacts(self._project(project_id),profile['sources'])
+            except (OSError,BridgeError):fresh=False
             overlap=len(set(v.lower() for v in (expertise or [])) & set(v.lower() for v in profile['expertise']))
             result.append({'worker':worker,'profile':profile,'profile_revision':rows[0]['revision'] if rows else 0,'recorded_sources_unchanged':fresh,'expertise_overlap':overlap,'tasks':self.registry.rows('SELECT id,state,revision FROM tasks WHERE owner=?',(worker['thread_id'],))})
         result.sort(key=lambda r:(-r['expertise_overlap'],-bool(r['worker']['latest_completed_turn']),r['worker']['thread_id']))
@@ -107,7 +105,7 @@ class CoordinationOperations:
             if worker['project_id']!=project_id or worker['role'].lower()=='coordinator':raise BridgeError('OWNERSHIP_CONFLICT','Assign planned work to a worker of this project.')
             task['write_paths']=[canonical(p) for p in task['write_paths']]
             for path in task['write_paths']:
-                if not contained(path,worker.get('workspace') or project['root']):raise BridgeError('ARTIFACT_SCOPE','Declared writes must stay in the assigned worker workspace.')
+                if not any(contained(path,root) for root in self._worker_write_roots(worker,project)):raise BridgeError('ARTIFACT_SCOPE','Declared writes must stay in the worker workspace or its authorized artifact directories.')
             if task['write_paths'] and any(r in worker['role'].lower() for r in ('audit','review','architect')):raise BridgeError('ROLE_CONFLICT','Read-only workers cannot own planned writes.')
             task['requirements']=task['requirements']+'\nInputs: '+json.dumps(task['inputs'])+'\nOutputs: '+json.dumps(task['outputs'])+'\nAcceptance: '+json.dumps(task['acceptance'])+'\nArchitecture contracts: '+json.dumps(contracts)
             for dependency in task['dependencies']:
@@ -133,7 +131,7 @@ class CoordinationOperations:
         planned=self._planned_task(task['plan_key'],task_id)
         for path in planned['write_paths']:
             worker,project=self._worker(task['owner'])
-            if not contained(path,worker.get('workspace') or project['root']):raise BridgeError('ARTIFACT_SCOPE','A declared write now resolves outside its worker workspace.')
+            if not any(contained(path,root) for root in self._worker_write_roots(worker,project)):raise BridgeError('ARTIFACT_SCOPE','A declared write now resolves outside its authorized directories.')
         return planned['write_paths']
 
     def audit_assess(self,assessment_key,task_id,audit_message_key,decision,evidence):

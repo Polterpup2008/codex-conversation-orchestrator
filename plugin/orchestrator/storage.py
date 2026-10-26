@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import json
 import pathlib
+import os
 import sqlite3
 import time
 from .errors import BridgeError
@@ -36,6 +37,17 @@ CREATE TABLE IF NOT EXISTS bridges (
 CREATE TABLE IF NOT EXISTS authorizations (
  project_id TEXT PRIMARY KEY REFERENCES projects(id), coordinator_thread_id TEXT NOT NULL,
  enabled INTEGER NOT NULL, headless INTEGER NOT NULL DEFAULT 0, integrations TEXT NOT NULL DEFAULT '[]', created REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS artifact_roots (
+ project_id TEXT NOT NULL REFERENCES projects(id), root TEXT NOT NULL,
+ enabled INTEGER NOT NULL, identity TEXT NOT NULL, reason TEXT NOT NULL, created REAL NOT NULL,
+ PRIMARY KEY(project_id,root));
+CREATE TABLE IF NOT EXISTS legacy_bridge_tokens (token TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS bridge_control_activity (
+ token TEXT PRIMARY KEY, revision INTEGER NOT NULL, name TEXT NOT NULL, started REAL NOT NULL, finished REAL);
+CREATE TABLE IF NOT EXISTS bridge_handoffs (
+ project_id TEXT PRIMARY KEY REFERENCES projects(id), owner_token TEXT NOT NULL,
+ baseline_revision INTEGER NOT NULL, epoch REAL NOT NULL, prepared REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS retired_bridge_tokens (token TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS audit_links (
  message_key TEXT PRIMARY KEY REFERENCES messages(key), task_id TEXT NOT NULL REFERENCES tasks(id),
  task_revision INTEGER NOT NULL, work_message_key TEXT NOT NULL REFERENCES messages(key),
@@ -67,13 +79,62 @@ def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
+def artifact_scope_triggers(db):
+    """Keep reservations enforced while already-running older bridges finish."""
+    def norm(column):
+        value=f"lower(replace({column},char(92),'/'))" if os.name=='nt' else column
+        return f"rtrim({value},'/')"
+    for table,column in (('projects','root'),('conversations','workspace'),('creations','workspace')):
+        new=norm('NEW.'+column);root=norm('a.root')
+        overlap=f"({new}={root} OR substr({new},1,length({root})+1)={root}||'/' OR substr({root},1,length({new})+1)={new}||'/')"
+        for event in ('INSERT','UPDATE OF '+column):
+            name='artifact_reserved_'+table+('_insert' if event=='INSERT' else '_update')
+            db.execute(f"CREATE TRIGGER IF NOT EXISTS {name} BEFORE {event} ON {table} WHEN NEW.{column} IS NOT NULL AND EXISTS(SELECT 1 FROM artifact_roots a WHERE a.enabled=1 AND {overlap}) BEGIN SELECT RAISE(ABORT,'Artifact directories cannot become project or worker source roots'); END")
+    # Old unbound experiment/activation code does filesystem work before its
+    # INSERT. Fence only those root-registration operations before their body;
+    # bound older coordinators keep their existing project operations available.
+    db.execute("""CREATE TRIGGER IF NOT EXISTS artifact_legacy_registration
+      BEFORE INSERT ON control_lock
+      WHEN NEW.name IN ('project_create','project_link','coordinator_activate')
+       AND EXISTS(SELECT 1 FROM artifact_roots WHERE enabled=1)
+       AND EXISTS(SELECT 1 FROM legacy_bridge_tokens WHERE token=NEW.owner_token)
+       AND NOT EXISTS(SELECT 1 FROM coordinator_leases WHERE owner_token=NEW.owner_token)
+      BEGIN SELECT RAISE(ABORT,'Current bridge required for new project registration while artifact reservations exist'); END""")
+
+
+def handoff_triggers(db):
+    """Observe even old control calls and fence retired owners atomically."""
+    clock="((julianday('now')-2440587.5)*86400.0)"
+    db.execute("""CREATE TRIGGER IF NOT EXISTS handoff_retired_owner
+      BEFORE INSERT ON control_lock
+      WHEN EXISTS(SELECT 1 FROM retired_bridge_tokens WHERE token=NEW.owner_token)
+      BEGIN SELECT RAISE(ABORT,'This bridge was retired by a project handoff'); END""")
+    db.execute(f"""CREATE TRIGGER IF NOT EXISTS handoff_control_enter
+      AFTER INSERT ON control_lock BEGIN
+      INSERT INTO bridge_control_activity VALUES(NEW.owner_token,1,NEW.name,{clock},NULL)
+      ON CONFLICT(token) DO UPDATE SET revision=revision+1,name=NEW.name,started={clock},finished=NULL;
+      END""")
+    db.execute(f"""CREATE TRIGGER IF NOT EXISTS handoff_control_exit
+      AFTER DELETE ON control_lock BEGIN
+      UPDATE bridge_control_activity SET finished={clock} WHERE token=OLD.owner_token;
+      END""")
+
+
 class Registry:
     def __init__(self, path):
         self.path = pathlib.Path(path); self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
             prior_version=db.execute('PRAGMA user_version').fetchone()[0]
-            if prior_version > 10:
+            if prior_version > 11:
                 raise BridgeError('REGISTRY_VERSION', 'Registry is newer than this plugin. Use the matching plugin version.')
+            if 0<prior_version<11:
+                # Keep a consistent private snapshot before the additive upgrade.
+                # Existing live older instances retain their original tables;
+                # newly started older software refuses schema11 instead of
+                # registering roots without understanding artifact reservations.
+                backup=self.path.with_name(self.path.name+'.before-v11-'+str(time.time_ns()))
+                fd=os.open(backup,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(fd)
+                with contextlib.closing(sqlite3.connect(self.path)) as source,contextlib.closing(sqlite3.connect(backup)) as target:source.backup(target)
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript(SCHEMA)
             # Rebuild only the parent table to extend its old experiment-only CHECK.
@@ -111,7 +172,10 @@ class Registry:
                 if db.execute('PRAGMA foreign_key_check').fetchone():
                     raise BridgeError('REGISTRY_INTEGRITY', 'Foreign-key validation failed during migration.')
                 if prior_version<8:db.execute("UPDATE operations SET stage='dispatching' WHERE stage='preparing'")
-                db.execute('PRAGMA user_version=10'); db.commit()
+                if prior_version<11:db.execute('INSERT OR IGNORE INTO legacy_bridge_tokens SELECT token FROM bridges')
+                artifact_scope_triggers(db)
+                handoff_triggers(db)
+                db.execute('PRAGMA user_version=11'); db.commit()
             except Exception:
                 db.rollback();raise
             finally:

@@ -16,7 +16,7 @@ def artifact_hash(path):
 
 class AuditOperations:
     def _audit_artifacts(self, project, artifacts):
-        roots=[project['root']]+[r['workspace'] for r in self.registry.rows('SELECT workspace FROM conversations WHERE project_id=? AND workspace IS NOT NULL',(project['id'],))]
+        roots=[project['root']]+[r['workspace'] for r in self.registry.rows('SELECT workspace FROM conversations WHERE project_id=? AND workspace IS NOT NULL',(project['id'],))]+self._artifact_roots(project)
         result=[]
         for artifact in artifacts or []:
             path=canonical(artifact['path'])

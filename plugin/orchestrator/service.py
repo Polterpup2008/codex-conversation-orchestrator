@@ -81,8 +81,9 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         self.instance = str(uuid.uuid4())
         self.caller_challenge = uuid.uuid4().hex
         self.stop_heartbeat = threading.Event()
-        with self.registry.connect() as db:
+        with self.registry.transaction() as db:
             db.execute('INSERT INTO bridges VALUES(?,?,1,?)', (self.instance, os.getpid(), time.time()))
+            db.execute('INSERT INTO current_bridge_tokens VALUES(?)',(self.instance,))
         def heartbeat():
             while not self.stop_heartbeat.wait(10):
                 with self.registry.connect() as db:

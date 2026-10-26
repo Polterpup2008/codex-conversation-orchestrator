@@ -9,6 +9,7 @@ import sqlite3
 from .appointment import native_path
 from .errors import BridgeError
 from .projects import path_key
+from .processes import owner_snapshot,owner_released
 
 RELEASE_TOOL='mcp__conversation_orchestrator__bridge_release'
 RELEASE_COMMAND='text(await tools.'+RELEASE_TOOL+'({}));'
@@ -120,10 +121,13 @@ def project_bridge_prepare(service,project_id):
             raise BridgeError('COORDINATOR_CONFLICT','The authorization changed during preparation.')
         lease=db.execute('SELECT owner_token FROM coordinator_leases WHERE project_id=?',(project_id,)).fetchone()
         if not lease:raise BridgeError('COORDINATOR_CONFLICT','No existing coordinator lease to hand off.')
+        owner=db.execute('SELECT pid FROM bridges WHERE token=?',(lease['owner_token'],)).fetchone()
+        if not owner:raise BridgeError('BRIDGE_PROCESS_UNVERIFIED','Original bridge process is not recorded.')
+        process=owner_snapshot(owner['pid'])
         activity=db.execute('SELECT revision FROM bridge_control_activity WHERE token=?',(lease['owner_token'],)).fetchone()
         prepared=time.time()
-        db.execute('INSERT INTO bridge_handoffs VALUES(?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET owner_token=excluded.owner_token,baseline_revision=excluded.baseline_revision,epoch=excluded.epoch,prepared=excluded.prepared',
-                   (project_id,lease['owner_token'],activity['revision'] if activity else 0,grant['created'],prepared))
+        db.execute('INSERT INTO bridge_handoffs VALUES(?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET owner_token=excluded.owner_token,baseline_revision=excluded.baseline_revision,epoch=excluded.epoch,prepared=excluded.prepared,process_identity=excluded.process_identity',
+                   (project_id,lease['owner_token'],activity['revision'] if activity else 0,grant['created'],prepared,json.dumps({'pid':process['pid'],'identity':process['identity']})))
     return {'prepared':True,'project_id':project_id,'coordinator_thread_id':caller,'previous_bridge':lease['owner_token'],
             'grants_unchanged':True,'next_release_command':RELEASE_COMMAND,'next_step':'Run that exact standalone functions.exec command, then start this helper with --handoff within five minutes. Do not use old control tools between release and handoff.'}
 
@@ -141,6 +145,11 @@ def project_bridge_register(service,project_id,handoff=False):
             current_intent,current_release=_handoff_release(db,project_id,current)
             if current_intent!=intent or current_release!=release:
                 raise BridgeError('BRIDGE_RELEASE_REQUIRED','The old bridge was used again while checking release. Release it again, then retry handoff.')
+            # Legacy release deletes its control lock even on failure. Its
+            # transcript cannot attest another connection's process teardown.
+            # While the same write transaction excludes all writer controls,
+            # verify the original OS process identity and actual child absence.
+            owner_released(json.loads(intent['process_identity']))
             # The same transaction validates the generation, fences any future
             # old control INSERT (including legacy code), and transfers this
             # lease. A finished or racing resume cannot escape the fence.

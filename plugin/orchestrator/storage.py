@@ -42,11 +42,12 @@ CREATE TABLE IF NOT EXISTS artifact_roots (
  enabled INTEGER NOT NULL, identity TEXT NOT NULL, reason TEXT NOT NULL, created REAL NOT NULL,
  PRIMARY KEY(project_id,root));
 CREATE TABLE IF NOT EXISTS legacy_bridge_tokens (token TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS current_bridge_tokens (token TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS bridge_control_activity (
  token TEXT PRIMARY KEY, revision INTEGER NOT NULL, name TEXT NOT NULL, started REAL NOT NULL, finished REAL);
 CREATE TABLE IF NOT EXISTS bridge_handoffs (
  project_id TEXT PRIMARY KEY REFERENCES projects(id), owner_token TEXT NOT NULL,
- baseline_revision INTEGER NOT NULL, epoch REAL NOT NULL, prepared REAL NOT NULL);
+ baseline_revision INTEGER NOT NULL, epoch REAL NOT NULL, prepared REAL NOT NULL, process_identity TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS retired_bridge_tokens (token TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS audit_links (
  message_key TEXT PRIMARY KEY REFERENCES messages(key), task_id TEXT NOT NULL REFERENCES tasks(id),
@@ -93,11 +94,12 @@ def artifact_scope_triggers(db):
     # Old unbound experiment/activation code does filesystem work before its
     # INSERT. Fence only those root-registration operations before their body;
     # bound older coordinators keep their existing project operations available.
-    db.execute("""CREATE TRIGGER IF NOT EXISTS artifact_legacy_registration
+    db.execute('DROP TRIGGER IF EXISTS artifact_legacy_registration')
+    db.execute("""CREATE TRIGGER artifact_legacy_registration
       BEFORE INSERT ON control_lock
       WHEN NEW.name IN ('project_create','project_link','coordinator_activate')
        AND EXISTS(SELECT 1 FROM artifact_roots WHERE enabled=1)
-       AND EXISTS(SELECT 1 FROM legacy_bridge_tokens WHERE token=NEW.owner_token)
+       AND NOT EXISTS(SELECT 1 FROM current_bridge_tokens WHERE token=NEW.owner_token)
        AND NOT EXISTS(SELECT 1 FROM coordinator_leases WHERE owner_token=NEW.owner_token)
       BEGIN SELECT RAISE(ABORT,'Current bridge required for new project registration while artifact reservations exist'); END""")
 

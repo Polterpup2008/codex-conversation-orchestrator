@@ -6,6 +6,8 @@ import tempfile
 import time
 import threading
 import sqlite3
+import subprocess
+import sys
 import unittest
 import uuid
 from unittest.mock import patch
@@ -29,6 +31,14 @@ class ProjectBridgeHandoffTests(unittest.TestCase):
         self.old=Service(self.base/'state',transport_factory=self.factory);self.addCleanup(self.old.close)
         self.other=Service(self.base/'state',transport_factory=self.factory);self.addCleanup(self.other.close)
         self.new=Service(self.base/'state',transport_factory=self.factory);self.addCleanup(self.new.close)
+        self.process_probe=patch('orchestrator.handoff.owner_snapshot',return_value={'pid':os.getpid(),'identity':'fixture-process','children':[]})
+        self.process_probe.start();self.addCleanup(self.process_probe.stop)
+        def released(expected):
+            if self.old._transport is not None and not self.old._transport.closed:
+                raise BridgeError('BRIDGE_RELEASE_REQUIRED','The original bridge still has child processes.')
+            return {'pid':os.getpid(),'identity':'fixture-process','children':[]}
+        self.release_probe=patch('orchestrator.handoff.owner_released',side_effect=released)
+        self.release_probe.start();self.addCleanup(self.release_probe.stop)
         for name,root in self.roots.items():grant_project(self.old.registry,name,root,self.ids[name],headless=True)
         self.old.coordinator_register('alpha',self.ids['alpha']);self.other.coordinator_register('beta',self.ids['beta'])
         self.env=patch.dict(os.environ,{'CODEX_THREAD_ID':self.ids['alpha'],'CODEX_HOME':str(self.home)})
@@ -161,6 +171,18 @@ class ProjectBridgeHandoffTests(unittest.TestCase):
         for after,now in ((stamp+1,stamp+2),(stamp-1,stamp-1)):
             with self.assertRaises(BridgeError):recent_release_proof(thread,after,release,now=now)
 
+    def test_failed_owner_release_cannot_use_another_connections_success(self):
+        worker=self.add_worker();self.old.conversation_resume(worker)
+        transport=self.old.rpc;transport.pending[1]='pending metadata request'
+        with self.assertRaisesRegex(BridgeError,'pending'):self.old.bridge_release()
+        self.write_release(owner=self.new)
+        before=self.old.registry.rows('SELECT * FROM authorizations')
+        with self.assertRaisesRegex(BridgeError,'child processes'):project_bridge_register(self.new,'alpha',True)
+        self.assertFalse(transport.closed);self.assertIn(worker,self.old.loaded)
+        self.assertEqual(self.old.registry.rows('SELECT * FROM authorizations'),before)
+        transport.pending.clear();self.write_release()
+        self.assertEqual(project_bridge_register(self.new,'alpha',True)['connection_scope'],'alpha')
+
     def test_completed_fallback_question_reply_invalidates_owner_release(self):
         worker=self.add_worker();turn=str(uuid.uuid4());r=self.old.registry
         r.reserve_message('alpha::question-source',worker,'Original technical question',None,self.old.instance)
@@ -176,6 +198,26 @@ class ProjectBridgeHandoffTests(unittest.TestCase):
         self.old.rpc.active.discard((worker,sent['turn_id']))
         self.assertEqual(r.one('messages','key',sent['key'])['state'],'completed')
         with self.assertRaisesRegex(BridgeError,'no subsequent control'):project_bridge_register(self.new,'alpha',True)
+
+
+class NativeProcessInspectionTests(unittest.TestCase):
+    def test_actual_child_must_exit_and_owner_identity_must_match(self):
+        from orchestrator.processes import owner_snapshot,owner_released
+        code="import subprocess,sys; p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(90)']); print(p.pid,flush=True); sys.stdin.readline(); p.terminate(); p.wait(); print('CHILD_EXITED',flush=True); sys.stdin.readline()"
+        owner=subprocess.Popen([sys.executable,'-I','-B','-S','-c',code],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,
+                               creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        try:
+            child=int(owner.stdout.readline());state=owner_snapshot(owner.pid)
+            self.assertIn(child,state['children'])
+            with self.assertRaisesRegex(BridgeError,'child processes'):owner_released(state)
+            owner.stdin.write('\n');owner.stdin.flush();self.assertEqual(owner.stdout.readline().strip(),'CHILD_EXITED')
+            self.assertEqual(owner_released(state)['children'],[])
+            with self.assertRaisesRegex(BridgeError,'identity changed'):owner_released(dict(state,identity='different-process'))
+        finally:
+            owner.stdin.close()
+            try:owner.wait(timeout=10)
+            except subprocess.TimeoutExpired:owner.terminate();owner.wait(timeout=10)
+            owner.stdout.close()
 
 
 if __name__=='__main__':unittest.main()

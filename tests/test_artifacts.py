@@ -198,5 +198,16 @@ class ArtifactRootTests(unittest.TestCase):
             with self.assertRaisesRegex(sqlite3.IntegrityError,'Artifact directories'):
                 db.execute('UPDATE conversations SET workspace=? WHERE thread_id=?',(str(child),self.workers[('beta','Developer')]))
 
+    def test_late_legacy_constructor_is_fenced_before_root_registration(self):
+        self.grant();late=str(uuid.uuid4())
+        with self.a.registry.connect() as db:
+            # Old code passed its schema10 check before migration, but only
+            # publishes its bridge row afterward. It is not in the snapshot.
+            db.execute('INSERT INTO bridges VALUES(?,?,1,0)',(late,os.getpid()))
+            self.assertIsNone(db.execute('SELECT 1 FROM legacy_bridge_tokens WHERE token=?',(late,)).fetchone())
+            with self.assertRaisesRegex(sqlite3.IntegrityError,'Current bridge'):
+                db.execute("INSERT INTO control_lock VALUES(1,?,'project_create')",(late,))
+            self.assertIsNone(db.execute('SELECT 1 FROM control_lock').fetchone())
+
 
 if __name__=='__main__':unittest.main()

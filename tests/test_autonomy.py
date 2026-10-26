@@ -298,7 +298,9 @@ class AppointmentTests(unittest.TestCase):
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
-        self.root = pathlib.Path(self.temp.name)
+        # Windows CI TEMP may itself be an alias. Positive fixtures deliberately
+        # use its physical root; explicit junction inputs below remain lexical.
+        self.root = pathlib.Path(self.temp.name).resolve()
         self.exe = self.root/'Python312/python.exe'; self.exe.parent.mkdir(); self.exe.write_bytes(b'synthetic-python')
         (self.exe.parent/'Lib').mkdir(); (self.exe.parent/'Lib/os.py').write_text('# synthetic fixture')
         self.tid = str(uuid.uuid4())

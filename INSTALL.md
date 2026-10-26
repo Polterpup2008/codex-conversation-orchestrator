@@ -25,7 +25,7 @@ This is an alpha dependency with experimental project APIs. Select a compatible 
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.5.5
+git checkout v0.5.6
 python scripts/install.py --approve-coordination-tools
 codex login
 ```
@@ -36,7 +36,9 @@ The installer verifies Python and the minimum CLI version, builds a private loca
 
 The plugin ID is `conversation-orchestrator@conversation-orchestrator-lab`. The historical marketplace name is retained for upgrade compatibility. Only this marketplace's source is updated; other marketplaces and plugin policies are preserved. The identical installed package is reused. Close chats using a package before replacing the same version on Windows; maintainers should version changed packages.
 
-Start a **new Codex chat** to load the updated tools and `conversation-coordinate` skill. An existing chat's tool inventory may remain unchanged. Review normal plugin/tool approval prompts. Do not globally disable approval protections for this plugin.
+**Reload/restart the Codex host, then resume the same designated chats** to refresh their tools and `conversation-coordinate` skill. An existing running chat can retain its older MCP process/tool inventory. Starting a new chat also loads current tools, but it has a different identity/history and is not required for an existing coordinator. Review normal plugin/tool approval prompts. Do not globally disable approval protections for this plugin.
+
+Upgrades retain private copies of validated previous packages and restore only missing old cache files after official CLI operations, including failure. Existing live files are never replaced. This keeps already-open old processes' resources readable; it does not hot-add new tools to their old inventories. `bridge_status` reports missing resources with `host_refresh_required` instead of throwing. Use the official installed-plugin inventory to identify the selected version; retained directories are not evidence that a version is active.
 
 To explicitly pre-approve routine calls to this plugin only, install with `python scripts/install.py --approve-coordination-tools`. This opt-in sets only its MCP server's `default_tools_approval_mode="approve"`, preserving other configuration. Direct-human appointment, project/lease checks, OS permissions and sandbox controls still apply. It neither pre-approves other plugins nor answers native command/file approvals. This avoids repeated routine plugin prompts after the operator has chosen autonomous coordination.
 

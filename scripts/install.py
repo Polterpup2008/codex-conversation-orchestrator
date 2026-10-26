@@ -1,7 +1,44 @@
 """Install a clean checkout using a verified local Python executable."""
 import argparse,hashlib,json,os,pathlib,re,shlex,shutil,subprocess,sys
-import copy,tomllib,tempfile
+import copy,tomllib,tempfile,contextlib
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+
+
+@contextlib.contextmanager
+def preserve_loaded_packages(home, new_version):
+    """Keep exact old files readable while the host still has old processes."""
+    home=pathlib.Path(home)
+    cache=home/'plugins/cache/conversation-orchestrator-lab/conversation-orchestrator'
+    retained=[]
+    for source in cache.iterdir() if cache.is_dir() else ():
+        if source.name==new_version or not source.is_dir() or source.resolve().parent!=cache.resolve():continue
+        manifest=source/'plugin.json'
+        if not manifest.is_file():continue
+        package=json.loads(manifest.read_text(encoding='utf-8'))
+        if package.get('name')!='conversation-orchestrator' or package.get('version')!=source.name:continue
+        retained_root=home.resolve()/'conversation-orchestrator/retained-packages'
+        backup=retained_root/source.name
+        if backup.resolve().parent!=retained_root:
+            raise SystemExit('Retained package storage was redirected; installation did not change the cache.')
+        backup.mkdir(parents=True,exist_ok=True)
+        for item in source.rglob('*'):
+            if item.is_file() and not item.is_symlink() and item.resolve().is_relative_to(source.resolve()) and '__pycache__' not in item.parts:
+                target=backup/item.relative_to(source)
+                if not target.resolve().is_relative_to(backup.resolve()):raise SystemExit('Retained package member was redirected.')
+                target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(item,target)
+        retained.append((source,backup))
+    try:yield
+    finally:
+        for destination,backup in retained:
+            if not destination.resolve().is_relative_to(cache.resolve()):
+                raise SystemExit('Previous cache root was redirected; retained files were not restored there.')
+            for item in backup.rglob('*'):
+                if not item.is_file() or item.is_symlink() or not item.resolve().is_relative_to(backup.resolve()):continue
+                target=destination/item.relative_to(backup)
+                if target.exists():continue  # never replace a live cache file
+                if not target.resolve().is_relative_to(destination.resolve()):
+                    raise SystemExit('Previous cache member was redirected; retained files remain in private backup.')
+                target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(item,target)
 
 
 def approve_coordination_tools(home):
@@ -80,26 +117,27 @@ def main():
     package_files=[p for p in (stage/'plugin').rglob('*') if p.is_file() and '__pycache__' not in p.parts]
     identical=installed.is_dir() and all((installed/p.relative_to(stage/'plugin')).is_file() and hashlib.sha256(p.read_bytes()).digest()==hashlib.sha256((installed/p.relative_to(stage/'plugin')).read_bytes()).digest() for p in package_files)
     subprocess.run([sys.executable,'-c','import sys; assert sys.version_info >= (3,11)'],check=True)
-    listing=json.loads(subprocess.run([codex,'plugin','marketplace','list','--json'],capture_output=True,text=True,check=True,env=env).stdout)
-    previous=next((p for p in listing['marketplaces'] if p['name']=='conversation-orchestrator-lab'),None)
-    different=previous and os.path.normcase(os.path.normpath(previous['root']))!=os.path.normcase(os.path.normpath(str(stage)))
-    if different:
-        subprocess.run([codex,'plugin','marketplace','remove','conversation-orchestrator-lab','--json'],check=True,env=env)
-    try:
-        subprocess.run([codex,'plugin','marketplace','add',str(stage)],check=True,env=env)
-    except subprocess.CalledProcessError:
-        if different:subprocess.run([codex,'plugin','marketplace','add',previous['root']],check=True,env=env)
-        raise
-    if not identical:
-        try:subprocess.run([codex,'plugin','add','conversation-orchestrator@conversation-orchestrator-lab','--json'],check=True,env=env)
-        except subprocess.CalledProcessError as exc:
-            raise SystemExit('Plugin installation failed. Close Codex chats using this version before replacing its cache; maintainers should use a new version for changed packages.') from exc
-    else:print('The identical package is already installed; cache replacement skipped.')
+    with preserve_loaded_packages(home,package_version):
+        listing=json.loads(subprocess.run([codex,'plugin','marketplace','list','--json'],capture_output=True,text=True,check=True,env=env).stdout)
+        previous=next((p for p in listing['marketplaces'] if p['name']=='conversation-orchestrator-lab'),None)
+        different=previous and os.path.normcase(os.path.normpath(previous['root']))!=os.path.normcase(os.path.normpath(str(stage)))
+        if different:
+            subprocess.run([codex,'plugin','marketplace','remove','conversation-orchestrator-lab','--json'],check=True,env=env)
+        try:
+            subprocess.run([codex,'plugin','marketplace','add',str(stage)],check=True,env=env)
+        except subprocess.CalledProcessError:
+            if different:subprocess.run([codex,'plugin','marketplace','add',previous['root']],check=True,env=env)
+            raise
+        if not identical:
+            try:subprocess.run([codex,'plugin','add','conversation-orchestrator@conversation-orchestrator-lab','--json'],check=True,env=env)
+            except subprocess.CalledProcessError as exc:
+                raise SystemExit('Plugin installation failed. Close Codex chats using this version before replacing its cache; maintainers should use a new version for changed packages.') from exc
+        else:print('The identical package is already installed; cache replacement skipped.')
     if args.approve_coordination_tools:
         approve_coordination_tools(home)
         print('Coordination tools pre-approved for this plugin only; project, host and sandbox permission controls remain enforced.')
     print(f'Installed with {version} and Python {sys.version.split()[0]}.')
-    print('Start a new Codex chat. Sign in with ChatGPT using codex login before running workers.')
+    print('Reload the Codex host to refresh tool inventories, then resume the SAME designated chats. Sign in with ChatGPT using codex login if needed before running workers.')
     print('A direct human appointment activates its exact project through coordinator_activate; no second local grant is needed. Installation alone appoints nobody. No API-key fallback.')
 
 

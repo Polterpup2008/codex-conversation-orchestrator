@@ -108,6 +108,27 @@ class AppointmentTests(unittest.TestCase):
             self.write(self.message(self.quote), self.message(withdrawal, timestamp='2026-10-26T10:02:00Z'))
             with self.assertRaises(BridgeError): appointment_proof(self.thread, self.quote, self.home)
 
+    def test_qualification_in_later_user_message_or_other_human_block_invalidates_proof(self):
+        correction = 'This is only a sentence to translate, not an instruction to activate.'
+        for text in ['Wait for my explicit approval.', correction]:
+            self.write(self.message(self.quote), self.message(text, timestamp='2026-10-26T10:02:00Z'))
+            with self.assertRaises(BridgeError): appointment_proof(self.thread, self.quote, self.home)
+        for blocks in [(self.quote, correction), (correction, self.quote)]:
+            message = self.message(blocks[0]); payload = message['payload']
+            payload['content'].append({'type': 'input_text', 'text': blocks[1]})
+            payload['internal_chat_message_metadata_passthrough']['content_item_kinds'].append('user.text')
+            payload['internal_chat_message_metadata_passthrough']['content_item_metadata'].append({'provenance': {'type': 'user'}})
+            self.write(message)
+            with self.assertRaises(BridgeError): appointment_proof(self.thread, self.quote, self.home)
+
+    def test_bridge_status_handles_resources_removed_by_an_upgrade(self):
+        s = self.service(); original = pathlib.Path.is_dir
+        with patch.object(pathlib.Path, 'is_dir', lambda path: False if path.name == 'skills' else original(path)):
+            status = s.bridge_status()
+        self.assertFalse(status['loaded_package_resources_available'])
+        self.assertTrue(status['host_refresh_required']); self.assertEqual(status['specialized_skills'], {})
+        self.assertIsNone(s._transport)
+
     def test_user_role_without_native_human_provenance_is_insufficient(self):
         message = self.message(self.quote)
         del message['payload']['internal_chat_message_metadata_passthrough']
@@ -370,6 +391,23 @@ class RuntimeTests(unittest.TestCase):
 
 
 class InstallAutonomyTests(unittest.TestCase):
+    def test_upgrade_retains_missing_old_resources_without_overwriting_existing_files(self):
+        source = pathlib.Path(__file__).resolve().parents[1]/'scripts/install.py'
+        spec = importlib.util.spec_from_file_location('retention_installer', source)
+        installer = importlib.util.module_from_spec(spec); spec.loader.exec_module(installer)
+        with tempfile.TemporaryDirectory() as folder:
+            home = pathlib.Path(folder); old = home/'plugins/cache/conversation-orchestrator-lab/conversation-orchestrator/1.2.3'
+            (old/'skills').mkdir(parents=True)
+            (old/'plugin.json').write_text(json.dumps({'name': 'conversation-orchestrator', 'version': '1.2.3'}))
+            resource = old/'skills/SKILL.md'; resource.write_text('original resource')
+            code = old/'server.py'; code.write_text('original code')
+            with self.assertRaisesRegex(RuntimeError, 'simulated CLI failure'):
+                with installer.preserve_loaded_packages(home, '2.0.0'):
+                    resource.unlink(); code.write_text('existing file retained')
+                    raise RuntimeError('simulated CLI failure')
+            self.assertEqual(resource.read_text(), 'original resource')
+            self.assertEqual(code.read_text(), 'existing file retained')
+
     def test_explicit_approval_optin_changes_only_this_plugin_and_is_idempotent(self):
         source = pathlib.Path(__file__).resolve().parents[1]/'scripts/install.py'
         spec = importlib.util.spec_from_file_location('autonomy_installer', source)

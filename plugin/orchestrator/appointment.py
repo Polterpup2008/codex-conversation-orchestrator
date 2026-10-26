@@ -150,6 +150,7 @@ def appointment_proof(thread, quote, codex_home=None):
                 kinds = provenance.get('content_item_kinds')
                 if not isinstance(parts, list) or not isinstance(kinds, list):
                     continue  # role=user alone can be a forwarded/generated message
+                human_texts = []
                 for index, content in enumerate(item.get('content', [])):
                     if content.get('type') != 'input_text':
                         continue
@@ -164,13 +165,14 @@ def appointment_proof(thread, quote, codex_home=None):
                     # Desktop attachment headers are provenance, not directives.
                     if '# Files ' in text:
                         text = text.split('## My request:', 1)[-1] if '## My request:' in text else ''
-                    direct = direct_directive(text, quote)
-                    if withdraws_appointment(text) or (direct and qualified_appointment(text)):
-                        proof = None
-                        continue
-                    if direct:
-                        proof = {'source': 'native_human_appointment', 'message_id': item.get('id'),
-                                 'line': number, 'quote_sha256': hashlib.sha256(quote.encode()).hexdigest()}
+                    human_texts.append(text)
+                text = '\n'.join(human_texts)
+                if withdraws_appointment(text) or qualified_appointment(text):
+                    proof = None
+                    continue
+                if direct_directive(text, quote):
+                    proof = {'source': 'native_human_appointment', 'message_id': item.get('id'),
+                             'line': number, 'quote_sha256': hashlib.sha256(quote.encode()).hexdigest()}
     except OSError as exc:
         raise BridgeError('APPOINTMENT_UNVERIFIED', 'Cannot read the native appointment record.', {'reason': str(exc)}) from exc
     if not metadata or metadata.get('id') != thread['id'] or path_key(metadata['cwd']) != path_key(thread['cwd']):

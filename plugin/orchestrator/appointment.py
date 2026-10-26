@@ -25,6 +25,7 @@ def caller_proof(thread, challenge, codex_home=None):
     """Bind a bridge nonce to a native shell output in the claimed current chat."""
     path = native_path(thread, codex_home)
     expected = 'ORCHESTRATOR_CALLER:'+challenge+':'+thread['id']
+    helper = re.sub('/+', '/', str(pathlib.Path(__file__).resolve().parents[1]/'caller.py').replace('\\', '/')).casefold()
     metadata = None; calls = set(); proof = None
     try:
         for number, line in enumerate(path.open(encoding='utf-8'), 1):
@@ -37,8 +38,12 @@ def caller_proof(thread, challenge, codex_home=None):
             if not metadata or metadata.get('id') != thread['id'] or packet.get('timestamp', '') < metadata.get('timestamp', ''):
                 continue
             if packet.get('type') != 'response_item': continue
-            if item.get('type') in ('function_call', 'custom_tool_call') and item.get('name') in ('exec', 'exec_command', 'functions.exec', 'functions.exec_command'):
-                calls.add(item.get('call_id'))
+            name = item.get('name')
+            if item.get('type') in ('function_call', 'custom_tool_call') and name in ('exec', 'exec_command', 'functions.exec', 'functions.exec_command'):
+                command = str(item.get('input') or item.get('arguments') or '')
+                normalized = re.sub('/+', '/', command.replace('\\', '/')).casefold()
+                if helper in normalized and challenge in command and (name in ('exec_command', 'functions.exec_command') or 'exec_command' in command):
+                    calls.add(item.get('call_id'))
             if item.get('type') in ('function_call_output', 'custom_tool_call_output') and item.get('call_id') in calls and expected in str(item.get('output', '')):
                 proof = {'source': 'native_shell_challenge', 'call_id': item['call_id'], 'line': number,
                          'challenge_sha256': hashlib.sha256(challenge.encode()).hexdigest()}
@@ -92,13 +97,30 @@ def direct_directive(text, quote):
 
 
 def withdraws_appointment(text):
-    first = plain(text.strip().splitlines()[0]) if text.strip() else ''
-    return bool(re.search(r'^(?:you (?:are no longer|are not|will no longer be|must not be) (?:the |my |our |a |an )?(?:coordinator|orchestrator)|'
+    statements = re.split(r'(?<=[.!?;])\s+|\n', plain(text))
+    return any(re.search(r'^\s*(?:you (?:are no longer|are not|will no longer be|must not be) (?:the |my |our |a |an )?(?:coordinator|orchestrator)|'
                           r'(?:stop|cease) (?:acting|serving) as (?:the )?(?:coordinator|orchestrator)|'
                           r'i (?:revoke|withdraw) (?:that|the|your|this) appointment|'
                           r'(?:do not|don.t) (?:act|serve) as (?:the )?(?:coordinator|orchestrator)|'
                           r'je (?:retire|revoque) (?:ta|votre|cette|la) (?:nomination|designation)|'
-                          r'(?:tu n.es (?:plus|pas)|vous n.etes (?:plus|pas)|ne sois (?:plus|pas)) (?:l.|mon |le |la )?(?:orchestrateur|coordinateur|coordinatrice))\b', first))
+                          r'(?:tu n.es (?:plus|pas)|vous n.etes (?:plus|pas)|ne sois (?:plus|pas)) (?:l.|mon |le |la )?(?:orchestrateur|coordinateur|coordinatrice))\b', statement) for statement in statements)
+
+
+def qualified_appointment(text):
+    """A selected sentence cannot discard a condition or quoted-example notice."""
+    statements = re.split(r'(?<=[.!?;])\s+|\n', plain(text))
+    for statement in statements:
+        if re.search(r'\b(?:not an? instruction|not an? (?:appointment|designation|authorization)|'
+                     r'(?:only|just|merely) an? (?:sentence|example|quotation|quote|hypothetical)|'
+                     r'ce n.est pas une (?:instruction|nomination|designation|autorisation)|'
+                     r'(?:seulement|uniquement|juste) (?:une? )?(?:phrase|citation|exemple|hypothese))\b', statement):
+            return True
+        if re.search(r'^\s*(?:(?:only if|if|unless|until|after|once) (?:i|we|the user|the human) (?:later )?(?:confirm|approve|authorize)|'
+                     r'(?:wait|await) (?:for )?(?:my|human|user) (?:explicit )?(?:confirmation|approval|appointment)|'
+                     r'(?:seulement|uniquement) (?:si|apres|quand) (?:je|nous) (?:le )?(?:confirme|confirmerai|valide|validerai|autorise|autoriserai)|'
+                     r'attends? (?:ma|mon|une nouvelle) (?:confirmation|validation|autorisation))\b', statement):
+            return True
+    return False
 
 
 def appointment_proof(thread, quote, codex_home=None):
@@ -142,9 +164,11 @@ def appointment_proof(thread, quote, codex_home=None):
                     # Desktop attachment headers are provenance, not directives.
                     if '# Files ' in text:
                         text = text.split('## My request:', 1)[-1] if '## My request:' in text else ''
-                    if withdraws_appointment(text):
+                    direct = direct_directive(text, quote)
+                    if withdraws_appointment(text) or (direct and qualified_appointment(text)):
                         proof = None
-                    if direct_directive(text, quote):
+                        continue
+                    if direct:
                         proof = {'source': 'native_human_appointment', 'message_id': item.get('id'),
                                  'line': number, 'quote_sha256': hashlib.sha256(quote.encode()).hexdigest()}
     except OSError as exc:

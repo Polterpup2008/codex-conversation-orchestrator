@@ -4,41 +4,69 @@ import copy,tomllib,tempfile,contextlib
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 
 
+def publish_missing_file(source, target):
+    """Publish complete bytes atomically; never replace a racing live file."""
+    source=pathlib.Path(source);target=pathlib.Path(target)
+    descriptor,name=tempfile.mkstemp(prefix='.orchestrator-restore-',dir=target.parent)
+    temporary=pathlib.Path(name)
+    try:
+        with os.fdopen(descriptor,'wb') as output,source.open('rb') as input_stream:
+            shutil.copyfileobj(input_stream,output);output.flush();os.fsync(output.fileno())
+        if os.name!='nt':shutil.copymode(source,temporary)
+        try:os.link(temporary,target)
+        except FileExistsError:return False
+        return True
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 @contextlib.contextmanager
 def preserve_loaded_packages(home, new_version):
     """Keep exact old files readable while the host still has old processes."""
     home=pathlib.Path(home)
     cache=home/'plugins/cache/conversation-orchestrator-lab/conversation-orchestrator'
+    cache_root=home.resolve()/'plugins/cache/conversation-orchestrator-lab/conversation-orchestrator'
+    if cache.resolve()!=cache_root:raise SystemExit('Plugin cache root was redirected; installation did not change it.')
+    retained_root=home.resolve()/'conversation-orchestrator/retained-packages'
+    if retained_root.resolve()!=retained_root:raise SystemExit('Retained package storage was redirected.')
+    retained_root.mkdir(parents=True,exist_ok=True)
+    # Immutable snapshots must not share a writable backup during two upgrades.
+    attempt=pathlib.Path(tempfile.mkdtemp(prefix='upgrade-',dir=retained_root))
     retained=[]
     for source in cache.iterdir() if cache.is_dir() else ():
-        if source.name==new_version or not source.is_dir() or source.resolve().parent!=cache.resolve():continue
+        if source.name==new_version or not source.is_dir() or source.resolve()!=cache_root/source.name:continue
         manifest=source/'plugin.json'
         if not manifest.is_file():continue
         package=json.loads(manifest.read_text(encoding='utf-8'))
         if package.get('name')!='conversation-orchestrator' or package.get('version')!=source.name:continue
-        retained_root=home.resolve()/'conversation-orchestrator/retained-packages'
-        backup=retained_root/source.name
-        if backup.resolve().parent!=retained_root:
+        backup=attempt/source.name
+        if backup.resolve().parent!=attempt:
             raise SystemExit('Retained package storage was redirected; installation did not change the cache.')
         backup.mkdir(parents=True,exist_ok=True)
         for item in source.rglob('*'):
-            if item.is_file() and not item.is_symlink() and item.resolve().is_relative_to(source.resolve()) and '__pycache__' not in item.parts:
+            if '__pycache__' in item.parts or item.name.startswith('.orchestrator-restore-'):continue
+            if item.is_symlink() or item.resolve()!=source.resolve()/item.relative_to(source):
+                raise SystemExit('Previous package member was redirected; installation did not change the cache.')
+            if item.is_file():
                 target=backup/item.relative_to(source)
-                if not target.resolve().is_relative_to(backup.resolve()):raise SystemExit('Retained package member was redirected.')
+                if target.resolve()!=backup/item.relative_to(source):raise SystemExit('Retained package member was redirected.')
                 target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(item,target)
         retained.append((source,backup))
     try:yield
     finally:
         for destination,backup in retained:
-            if not destination.resolve().is_relative_to(cache.resolve()):
+            if cache.resolve()!=cache_root or destination.resolve()!=cache_root/destination.name:
                 raise SystemExit('Previous cache root was redirected; retained files were not restored there.')
+            if backup.resolve()!=backup:raise SystemExit('Retained snapshot root was redirected.')
             for item in backup.rglob('*'):
-                if not item.is_file() or item.is_symlink() or not item.resolve().is_relative_to(backup.resolve()):continue
+                if item.is_symlink() or item.resolve()!=backup/item.relative_to(backup):
+                    raise SystemExit('Retained snapshot member was redirected.')
+                if not item.is_file():continue
                 target=destination/item.relative_to(backup)
-                if target.exists():continue  # never replace a live cache file
-                if not target.resolve().is_relative_to(destination.resolve()):
+                if target.resolve()!=cache_root/destination.name/item.relative_to(backup):
                     raise SystemExit('Previous cache member was redirected; retained files remain in private backup.')
-                target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(item,target)
+                if target.exists():continue  # publication also enforces this atomically
+                target.parent.mkdir(parents=True,exist_ok=True);publish_missing_file(item,target)
 
 
 def approve_coordination_tools(home):

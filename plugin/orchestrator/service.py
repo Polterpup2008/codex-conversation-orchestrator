@@ -39,9 +39,13 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         from . import __version__
         root=pathlib.Path(__file__).resolve().parents[1]
         assets_available=(root/'skills').is_dir()
+        try:
+            skills={p.name:str(p/'SKILL.md') for p in ((root/'skills').iterdir() if assets_available else ()) if p.is_dir() and (p/'SKILL.md').is_file()}
+        except OSError:
+            assets_available=False;skills={}
         with self.registry.connect() as db:schema=db.execute('PRAGMA user_version').fetchone()[0]
         return {'version':__version__,'registry_schema':schema,'plugin_root':str(root),'coordination_skill':str(root/'skills/conversation-coordinate/SKILL.md'),
-                'specialized_skills':{p.name:str(p/'SKILL.md') for p in ((root/'skills').iterdir() if assets_available else ()) if p.is_dir() and (p/'SKILL.md').is_file()},
+                'specialized_skills':skills,
                 'loaded_package_resources_available':assets_available,'host_refresh_required':not assets_available,
                 'codex_home':str(pathlib.Path(os.environ.get('CODEX_HOME',pathlib.Path.home()/'.codex'))),'data_dir':str(self.data_dir),
                 'project_scope':self.project_scope,'per_project_plugin_copy_required':False,'production_requires_local_grant_and_registration':False,

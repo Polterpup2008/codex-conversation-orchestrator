@@ -129,6 +129,17 @@ class AppointmentTests(unittest.TestCase):
         self.assertTrue(status['host_refresh_required']); self.assertEqual(status['specialized_skills'], {})
         self.assertIsNone(s._transport)
 
+    def test_bridge_status_tolerates_resources_disappearing_after_the_directory_check(self):
+        s = self.service(); original = pathlib.Path.iterdir
+        def vanished(path):
+            if path.name == 'skills': raise FileNotFoundError('simulated concurrent upgrade')
+            return original(path)
+        with patch.object(pathlib.Path, 'iterdir', vanished):
+            status = s.bridge_status()
+        self.assertTrue(status['host_refresh_required'])
+        self.assertEqual(status['specialized_skills'], {})
+        self.assertIsNone(s._transport)
+
     def test_user_role_without_native_human_provenance_is_insufficient(self):
         message = self.message(self.quote)
         del message['payload']['internal_chat_message_metadata_passthrough']
@@ -391,6 +402,23 @@ class RuntimeTests(unittest.TestCase):
 
 
 class InstallAutonomyTests(unittest.TestCase):
+    def test_restore_publication_cannot_replace_a_file_created_at_the_last_instant(self):
+        source = pathlib.Path(__file__).resolve().parents[1]/'scripts/install.py'
+        spec = importlib.util.spec_from_file_location('atomic_installer', source)
+        installer = importlib.util.module_from_spec(spec); spec.loader.exec_module(installer)
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder); backup = root/'backup'; backup.write_bytes(b'old bytes')
+            target = root/'live'; link = os.link
+            def race(src, dst):
+                pathlib.Path(dst).write_bytes(b'new live bytes')
+                return link(src, dst)
+            with patch.object(installer.os, 'link', race):
+                self.assertFalse(installer.publish_missing_file(backup, target))
+            self.assertEqual(target.read_bytes(), b'new live bytes')
+            self.assertEqual(list(root.glob('.orchestrator-restore-*')), [])
+            target.unlink(); self.assertTrue(installer.publish_missing_file(backup, target))
+            self.assertEqual(target.read_bytes(), b'old bytes')
+
     def test_upgrade_retains_missing_old_resources_without_overwriting_existing_files(self):
         source = pathlib.Path(__file__).resolve().parents[1]/'scripts/install.py'
         spec = importlib.util.spec_from_file_location('retention_installer', source)
@@ -407,6 +435,11 @@ class InstallAutonomyTests(unittest.TestCase):
                     raise RuntimeError('simulated CLI failure')
             self.assertEqual(resource.read_text(), 'original resource')
             self.assertEqual(code.read_text(), 'existing file retained')
+            with installer.preserve_loaded_packages(home, '2.0.0'):
+                before = set((home/'conversation-orchestrator/retained-packages').iterdir())
+                with installer.preserve_loaded_packages(home, '2.0.1'):
+                    after = set((home/'conversation-orchestrator/retained-packages').iterdir())
+                    self.assertEqual(len(after-before), 1)
 
     def test_explicit_approval_optin_changes_only_this_plugin_and_is_idempotent(self):
         source = pathlib.Path(__file__).resolve().parents[1]/'scripts/install.py'

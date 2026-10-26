@@ -25,7 +25,7 @@ This is an alpha dependency with experimental project APIs. Select a compatible 
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.5.6
+git checkout v0.5.7
 python scripts/install.py --approve-coordination-tools
 codex login
 ```

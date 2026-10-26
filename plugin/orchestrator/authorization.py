@@ -1,4 +1,4 @@
-"""Project grants are created by the local operator, never by an MCP tool.
+"""Project authority comes from the human, via native appointment or local grant.
 
 Scopes prevent accidental cross-project API use. This is a same-OS-user tool,
 not a security boundary against a person who can edit its database or run shell.
@@ -12,7 +12,7 @@ from .projects import canonical, contained, path_key
 
 
 def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
-                  desktop_project_id=None, headless=False, integrations=()):
+                  desktop_project_id=None, headless=False, integrations=(), appointment=None):
     from .service import identifier
     identifier(coordinator)
     if ':' in project_id:raise BridgeError('INVALID_PROJECT_ID','Project IDs cannot contain the reserved colon separator.')
@@ -42,6 +42,14 @@ def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
             if contained(root,creation['workspace']) or contained(creation['workspace'],root):
                 raise BridgeError('PROJECT_OVERLAP','The root overlaps another project pending worker workspace.')
         prior = db.execute('SELECT * FROM authorizations WHERE project_id=?', (project_id,)).fetchone()
+        if appointment and prior:
+            # Recheck inside the same write transaction: operator provisioning or
+            # revocation may have happened while native evidence was being read.
+            if not prior['enabled']:
+                raise BridgeError('AUTHORIZATION_REVOKED', 'A historical appointment cannot undo a revoked grant.')
+            if prior['coordinator_thread_id'] != coordinator:
+                raise BridgeError('COORDINATOR_CONFLICT', 'An appointment cannot replace another owner.')
+            return next(row for row in rows if row['id'] == project_id)
         if prior and prior['enabled'] and prior['coordinator_thread_id'] != coordinator:
             raise BridgeError('COORDINATOR_CONFLICT', 'Revoke the old grant before an explicit coordinator handoff.')
         other = db.execute('SELECT project_id FROM authorizations WHERE coordinator_thread_id=? AND project_id<>? AND enabled=1',
@@ -60,12 +68,52 @@ def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
                    (project_id, root, time.time(), desktop_project_id, coordinator, desktop_ui_id))
         db.execute('INSERT INTO authorizations(project_id,coordinator_thread_id,enabled,headless,integrations,created) VALUES(?,?,1,?,?,?) ON CONFLICT(project_id) DO UPDATE SET coordinator_thread_id=excluded.coordinator_thread_id,enabled=1,headless=excluded.headless,integrations=excluded.integrations,created=excluded.created',
                    (project_id, coordinator, int(headless), json.dumps(sorted(set(integrations))), time.time()))
+        if appointment:
+            db.execute("INSERT INTO notes(project_id,kind,text,created) VALUES(?,'decision',?,?)",
+                       (project_id, json.dumps({'coordinator_appointment': appointment}), time.time()))
         if existing and (existing['desktop_ui_project_id']!=desktop_ui_id or prior and bool(prior['headless'])!=bool(headless)):
             db.execute("UPDATE conversations SET desktop_sync_state=?,desktop_evidence=NULL WHERE project_id=? AND lower(role)<>'coordinator'",('headless' if headless else 'pending',project_id))
     return registry.one('projects', 'id', project_id)
 
 
 class AuthorizationOperations:
+    def coordinator_activate(self, project_id, coordinator_thread_id, appointment_quote,
+                             desktop_ui_project_id=None, desktop_project_id=None, headless=False):
+        """Materialize an existing human appointment, without another user grant."""
+        from .service import identifier
+        from .appointment import appointment_proof, caller_proof
+        identifier(coordinator_thread_id)
+        if self.project_scope not in (None, project_id):
+            raise BridgeError('PROJECT_ACCESS_DENIED', 'A connection cannot switch projects.')
+        caller = os.environ.get('CODEX_THREAD_ID')
+        if caller and caller != coordinator_thread_id:
+            raise BridgeError('COORDINATOR_CONFLICT', 'Activate only the conversation calling this tool.')
+        workers = self.registry.rows('SELECT role FROM conversations WHERE thread_id=?', (coordinator_thread_id,))
+        if workers and workers[0]['role'].lower() != 'coordinator':
+            raise BridgeError('ROLE_CONFLICT', 'A managed worker cannot appoint itself coordinator.')
+        prior = self.registry.rows('SELECT * FROM authorizations WHERE project_id=?', (project_id,))
+        if prior and not prior[0]['enabled']:
+            raise BridgeError('AUTHORIZATION_REVOKED', 'This project was explicitly revoked. A historical appointment cannot undo revocation; use the deliberate operator handoff.')
+        thread = self.rpc.call('thread/read', {'threadId': coordinator_thread_id, 'includeTurns': False})['thread']
+        identity = {'source': 'host_environment'} if caller else caller_proof(thread, self.caller_challenge)
+        proof = appointment_proof(thread, appointment_quote)
+        if desktop_project_id:
+            native = self.rpc.call('project/read', {'projectId': desktop_project_id})['project']
+            if not any(path_key(r['path']) == path_key(thread['cwd']) for r in native['roots']):
+                raise BridgeError('PROJECT_CONFLICT', 'The App Server project does not contain this primary root.')
+        if prior:
+            existing = self.registry.one('projects', 'id', project_id)
+            if prior[0]['coordinator_thread_id'] != coordinator_thread_id or path_key(existing['root']) != path_key(thread['cwd']):
+                raise BridgeError('COORDINATOR_CONFLICT', 'An appointment cannot replace another project owner.')
+            # Resume existing permissions; an activation retry must not reset integrations/UI.
+        else:
+            grant_project(self.registry, project_id, thread['cwd'], coordinator_thread_id,
+                          desktop_ui_project_id, desktop_project_id, headless, appointment=proof)
+        result = self.coordinator_register(project_id, coordinator_thread_id)
+        return {**result, 'authorization': 'verified_human_appointment', 'appointment': proof,
+                'caller_identity': identity,
+                'additional_human_confirmation_required': False}
+
     def _project(self, project_id):
         project = self.registry.one('projects', 'id', project_id)
         if os.path.normcase(os.path.abspath(project['root']))!=os.path.normcase(canonical(project['root'])):
@@ -125,7 +173,7 @@ class AuthorizationOperations:
 
     def authorize_call(self, name, arguments):
         """Apply scope at the MCP boundary before any resource lookup or mutation."""
-        if name in ('coordinator_register', 'model_list', 'model_route', 'bridge_release','bridge_status'):
+        if name in ('coordinator_register', 'coordinator_activate', 'model_list', 'model_route', 'bridge_release','bridge_status'):
             return
         scope = getattr(self, 'project_scope', None)
         if name == 'project_create':

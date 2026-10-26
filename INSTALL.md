@@ -25,7 +25,7 @@ This is an alpha dependency with experimental project APIs. Select a compatible 
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.4.3
+git checkout v0.5.4
 python scripts/install.py
 codex login
 ```
@@ -38,9 +38,11 @@ The plugin ID is `conversation-orchestrator@conversation-orchestrator-lab`. The 
 
 Start a **new Codex chat** to load the updated tools and `conversation-coordinate` skill. An existing chat's tool inventory may remain unchanged. Review normal plugin/tool approval prompts. Do not globally disable approval protections for this plugin.
 
-Installation is shared by chats using the same `CODEX_HOME` profile. **Do not copy the plugin/cache into individual project folders.** Put only each project's customized `orchestrator.md` there, then authorize that exact root/coordinator. `bridge_status` shows the actually loaded version and skill/profile paths. If a chat reports 0.2.2 and `experiment_only`, refresh its plugin process/tool inventory after upgrading; do not solve that by copying another cache folder. On a production-capable version, an unregistered connection still reports `experiment_only` until the local grant and `coordinator_register` are completed. A different profile or explicit project plugin-disable setting needs its own configuration check.
+To explicitly pre-approve routine calls to this plugin only, install with `python scripts/install.py --approve-coordination-tools`. This opt-in sets only its MCP server's `default_tools_approval_mode="approve"`, preserving other configuration. Direct-human appointment, project/lease checks, OS permissions and sandbox controls still apply. It neither pre-approves other plugins nor answers native command/file approvals. This avoids repeated routine plugin prompts after the operator has chosen autonomous coordination.
 
-The 0.4 release adds five packaged coordination skills and 11 MCP operations (42 total). Schema 10 migrates existing state additively. Old active question responses cannot be replayed on a new transport generation: finish or reconcile pending work before upgrading/restarting, retain original IDs/keys, and use a fresh continuation only after the original outcome is known. New managed conversations receive the dedicated question tool; older IDs remain reusable through the completed-turn fallback. No API key is required.
+Installation is shared by chats using the same `CODEX_HOME` profile. **Do not copy the plugin/cache into individual project folders.** Put only each project's customized `orchestrator.md` there and designate its coordinator directly. `bridge_status` shows the actually loaded version and skill/profile paths. An unregistered connection can show `experiment_only` even though the package supports production. Activate the already appointed chat; do not turn this state into a redundant human grant question. A different profile or explicit project plugin-disable setting needs its own configuration check.
+
+The 0.5 release adds appointment activation and runtime preflight (44 MCP tools total), retaining the five specialized skills and schema 10. Existing authorizations/IDs remain valid. Old active question responses cannot be replayed on a new transport generation: finish or reconcile pending work before upgrading/restarting, retain original IDs/keys, and use a fresh continuation only after the original outcome is known. No API key is required.
 
 For an isolated installation-profile test:
 
@@ -60,7 +62,25 @@ Using the hosting Codex tools, identify:
 2. The existing native local desktop project ID, obtained from `list_projects`.
 3. An optional verified canonical App Server project ID. Native and canonical IDs can differ.
 
-Run this yourself as the local operator, replacing the placeholders:
+The human designation is sufficient. Read `bridge_status` first. If MCP lacks `CODEX_THREAD_ID`, execute its `caller_probe.command` in this actual chat's shell; installed `caller.py` prints a fresh connection-bound nonce and actual environment UUID, without writing files or the private registry. Activation corroborates that native tool output, so workspace-write coordinators need no registry permission workaround. Keep the same MCP connection. Then the designated chat calls:
+
+```text
+coordinator_activate(project_id="my-project", coordinator_thread_id="<this-chat-uuid>",
+  appointment_quote="I appoint THIS chat as coordinator of this project.",
+  desktop_ui_project_id="<observed-native-project-id>")
+```
+
+Use an exact short direct directive already at the beginning of the native human request, in French or English; it may be the first sentence before other instructions on the same line. A preceding instruction to read `orchestrator.md` is also supported. The tested CLI records explicit human text provenance. A line appearing later in a report/file, missing provenance, inherited fork history and later human withdrawal are insufficient. Caller identity must come from the exact host UUID or the current connection's native shell proof; missing identity does not permit borrowing another chat. The tool verifies actual identity/root, worker-role exclusion, overlaps and ownership before materializing the grant and registering. It stores only bounded proof references/hashes in private state. A previous revocation or different owner cannot be overridden by historical wording. The coordinator does not need to ask the human to run another grant command.
+
+For a chat retaining an old MCP inventory, use the current **officially installed** package's compatibility entry point with its verified Python:
+
+```powershell
+python <installed-plugin-root>/activate.py --project-id my-project --coordinator <this-chat-uuid> --appointment-quote 'I appoint THIS chat as coordinator of this project.' --desktop-ui-project-id <native-project-id>
+```
+
+Then call `coordinator_register` through that original chat's tools. The helper creates no worker or model turn and closes its temporary lease. It uses the same `CODEX_HOME` and private registry as the installed plugin; preserve those explicit environment settings for a custom profile/state directory. It requires the caller UUID and existing shell access to that private registry; it is not a sandbox escape or a substitute for host refresh when an old tool inventory lacks registration itself. Existing grants simply register directly. Read the installed version via `codex plugin list --json`; do not choose a cache directory by the largest version number. This helper is covered by the human appointment and needs no repeated confirmation.
+
+The local operator CLI remains available for deliberate provisioning/handoff:
 
 ```powershell
 python scripts/authorize.py grant <project-root> --project-id my-project --coordinator <thread-uuid> --desktop-ui-project-id <native-project-id>
@@ -70,13 +90,17 @@ Optionally add `--canonical-project-id <app-server-project-id>` when verified. T
 
 For deliberate headless use, substitute `--headless` for the native ID. That choice omits native sidebar verification. Do not change to headless merely to evade a failed desktop attachment.
 
-Then paste [ORCHESTRATOR_PROMPT.md](ORCHESTRATOR_PROMPT.md) into the designated chat. Give it the registry project ID and contract location. It must load the installed skill, call `coordinator_register` with the exact granted identities, recover state, and verify capabilities before claiming readiness.
+Paste [ORCHESTRATOR_PROMPT.md](ORCHESTRATOR_PROMPT.md) into the designated chat, or use an equivalent direct appointment and request to read its contract. It must load the installed skill, activate or resume the exact identities, recover state, and verify capabilities before claiming readiness.
 
 The server binds that MCP connection to one project and obtains a coordinator lease. Another live connection cannot take over. Separate projects may operate simultaneously. These application guards protect coordination state; the same OS user remains trusted. See [security boundaries](docs/SECURITY.md).
 
 ## Permissions and integrations
 
 Managed developers get workspace-write sandbox policy restricted to their workspace. Audit/review/architecture workers get read-only policy. Broad temporary-directory write grants and worker network access are disabled. Install project dependencies locally when necessary; an unattended worker cannot approve sandbox escapes or interactive prompts.
+
+Choose roles and counts freely; no fixed developer/auditor pair is required. Modeler and integration roles may produce files in their workspace. Independent auditors can cover multiple deliveries with separate artifact-bound verdicts.
+
+Routine technical choices, plans, workers, tests and Python execution fall within the appointment and approved task. Use `runtime_check(python_executable="<absolute-project-python>")` on runtime access failures. It executes only `-I -B -S` version probes under both role policies, without worker turns or dependency/GPU imports. On Windows an observed access failure can be repaired by adding only inherited ReadAndExecute for the existing Codex sandbox group to a standard per-user `Programs/Python/PythonNN` base installation. ACL evidence is saved privately before mutation; owner, inheritance protection and runtime contents are preserved. No elevation, sandbox/network-policy change, venv reconstruction or recursive ACL reset occurs. Other paths or actual missing host/managed rights require diagnosis under existing authority. A successful preflight does not qualify project dependencies, CUDA or training.
 
 Worker subprocesses disable hooks, apps and subagents. Known user/project/profile MCP and plugin integrations are disabled by default; the local operator can permit a specific integration when required:
 
@@ -108,13 +132,13 @@ Control mutations are serialized briefly across the private registry; worker tur
 | No tools / old tool list | Start a new chat; inspect the installed package/version and local logs. Verify that the installer completed. |
 | Bare Python missing in app PATH | Run the installer using a verified Python interpreter; it generates a contained runtime launcher. |
 | Windows cache backup access denied | Close chats holding that package before reinstalling the same version. Do not delete active caches. |
-| `PROJECT_NOT_AUTHORIZED` | Check the local grant, exact coordinator UUID, state directory, and `coordinator_register`. |
+| `PROJECT_NOT_AUTHORIZED` | If already human-appointed, use `coordinator_activate` or installed `activate.py`, then original registration. Check the exact IDs/profile/state directory; do not ask for a second routine grant. |
 | `COORDINATOR_CONFLICT` | Close the other live connection or complete an explicit handoff. Do not rewrite its lease. |
 | `DESKTOP_SYNC_REQUIRED` | Use the skill's metadata-only temporary-pin/move/restore workflow, then observe actual grouping. Avoid opening the worker and taking its writer. Matching cwd alone is insufficient. |
 | Writer lock / another client owns thread | Close the competing client, release an idle owning bridge, then reconcile the same ID. Do not automatically archive arbitrary chats. |
 | Model/effort unavailable | Refresh `model_list`; explicit choices are rejected without hidden substitution. |
 | Subscription throttling / network failure | Retain the same message key, inspect actual status, and wait/reconcile. Do not flood retries or switch to API-key billing. |
-| Python inaccessible inside worker | Use an authorized installed runtime accessible in its sandbox, with an absolute path and `-B` where appropriate. |
-| Interactive approval requested | The unattended bridge refuses it. Resolve the environment/permissions through the local operator. |
+| Python inaccessible inside worker | Run `runtime_check` on the actual project executable and inspect both role results. Repair supported RX access autonomously; use bundled Python only for suitable stdlib diagnostics, never a silent dependency/GPU substitution. |
+| Interactive approval requested | The unattended bridge refuses it. Diagnose and recover within existing authority. Ask the human only for a genuinely missing right; routine prior authorizations must not be requested again. |
 
 Detailed commands and supported operations are in [architecture and operations](docs/ARCHITECTURE.md). Public validation distinguishes executed checks from advertised capabilities.

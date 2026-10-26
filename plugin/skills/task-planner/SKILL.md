@@ -9,6 +9,8 @@ Use only approved objectives in this coordinator's registered project. Read the 
 
 Choose coherent deliverables: avoid one vague multi-system prompt and avoid meaningless microtasks. For each task define owner, requirements/exclusions, inputs, outputs, acceptance checks, existing dependencies and exact declared write paths. Reuse appropriate workers; discover actual models/efforts and select them through the existing routing infrastructure.
 
+The approved objective authorizes ordinary planning and delegation; do not request a separate plan/worker/Python confirmation. Choose the team freely: several developers, a shared independent auditor, modelers or other specialists as needed. No fixed pair or worker count is required. Keep each deliverable's ownership and independent acceptance evidence explicit.
+
 Record shared interfaces through `architecture_contract` when workers depend on them. Use `plan_record` with the approved objective/source, tasks and exact contract revisions. It validates ownership, workspace scope and acyclic dependencies, then returns normalized requirements and topological order. This record does not itself authorize new product work or send anything.
 
 Create tasks in the returned order with `task_assign(plan_key=...)`, copying the returned owner, exact normalized requirements and dependencies. Use `message_send` with stable keys, precise worker prompts and relevant context packets. The plugin checks bound contract revisions/hashes and retains overlapping declared write claims while a delivery is unresolved. Claims cover declared paths; they do not replace OS sandboxing or prove all actual modifications were declared. Use verified worktrees or sequential scheduling for broader shared-file risk.

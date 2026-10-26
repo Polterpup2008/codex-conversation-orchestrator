@@ -21,7 +21,7 @@ ROUTING={'model':string('Exact account-advertised model ID. Explicit unsupported
     'difficulty':{'type':'string','enum':['routine','standard','complex','demanding','extreme']},
     'justification':string('Technical reason for escalation; required for extreme or Ultra.')}
 TOOLS = [
-    tool('project_create', 'Register an isolated, empty experiment workspace. Production projects require the local authorization CLI and coordinator_register.',
+    tool('project_create', 'Register an isolated, empty experiment workspace. Existing projects use coordinator_activate after direct human designation, or coordinator_register for an existing grant.',
          {'project_id': KEY, 'workspace': string('Absolute path to a new empty test workspace.'),
           'desktop':{'type':'boolean'},'name':string('Local project name.'),
           'desktop_project_id':KEY}, ['project_id', 'workspace']),
@@ -58,13 +58,13 @@ TOOLS = [
          {'project_id': KEY, 'kind': {'type': 'string', 'enum': ['decision', 'problem', 'resolution']}, 'text': string('Inspectable note.')}, ['project_id', 'kind', 'text']),
     tool('task_recover', 'Explicitly recover a blocked task only after all sends have resolved; retains ownership and records the reason.',
          {'task_id': KEY, 'expected_revision': {'type':'integer','minimum':0}, 'reason': string('Observed recovery evidence.')}, ['task_id','expected_revision','reason']),
-    tool('project_status', 'Retrieve durable scoped project/worker/task/decision state. Unregistered connections remain experiment_only until an explicit grant and coordinator_register.', {'project_id': KEY}, read_only=True),
+    tool('project_status', 'Retrieve durable scoped project/worker/task/decision state. Unregistered connections show experiment_only until coordinator_activate or existing grant/registration; this does not imply missing production support.', {'project_id': KEY}, read_only=True),
     tool('desktop_project_list','Read account-local App Server projects. These are local Codex projects, separate from ChatGPT cloud Projects. UI registration must be verified separately.',{},read_only=True),
     tool('project_discover','Resolve the genuine coordinator primary local project from thread metadata or one unambiguous registered root. Never guesses the plugin cwd.',
         {'coordinator_thread_id':ID},read_only=True),
     tool('project_link','Bind an isolated registry project to the authoritative local Codex project/coordinator. Does not move unrelated threads or activate permanent coordination.',
         {'project_id':KEY,'desktop_project_id':KEY,'coordinator_thread_id':ID,'desktop_ui_project_id':KEY},['project_id']),
-    tool('coordinator_register','Bind this MCP connection to an explicitly authorized project and its designated coordinator. Grants must be created by the local operator.',
+    tool('coordinator_register','Resume an existing scoped authorization and original coordinator. A new human designation uses coordinator_activate without a second local grant.',
         {'project_id':KEY,'coordinator_thread_id':ID},['project_id','coordinator_thread_id']),
     tool('model_list','Discover current account-visible models, supported efforts and defaults with official model/list. Catalog availability is distinct from successful execution.',
         {'refresh':{'type':'boolean'}},read_only=True),
@@ -90,6 +90,8 @@ next(t for t in TOOLS if t['name']=='task_assign')['inputSchema']['properties'][
 PLAN_TASK={'type':'object','properties':{'id':KEY,'owner':ID,'requirements':string('Task scope and constraints.'),'inputs':TEXTS,'outputs':TEXTS,'acceptance':TEXTS,'dependencies':{'type':'array','items':KEY,'maxItems':50},'write_paths':TEXTS},'required':['id','owner','requirements','inputs','outputs','acceptance','dependencies','write_paths'],'additionalProperties':False}
 CONTRACT_REF={'type':'object','properties':{'key':KEY,'revision':{'type':'integer','minimum':1}},'required':['key','revision'],'additionalProperties':False}
 TOOLS.extend([
+    tool('coordinator_activate','Activate THIS human-designated chat from an exact direct appointment already in its native history. No second grant/confirmation. Refuses managed workers, fabricated evidence, revoked grants, another owner or another project.',{'project_id':KEY,'coordinator_thread_id':ID,'appointment_quote':string('Exact short direct human designation from this conversation, without quotes/code fences.',maxLength=2000),'desktop_ui_project_id':KEY,'desktop_project_id':KEY,'headless':{'type':'boolean'}},['project_id','coordinator_thread_id','appointment_quote']),
+    tool('runtime_check','Registered coordinator preflight: version-only probes under developer/auditor policies. Can add only RX to a standard per-user Windows base Python after an observed access failure, preserving runtime files and sandbox policies. No second human confirmation for routine authorized maintenance.',{'python_executable':string('Absolute existing project Python/venv executable.'),'repair_read_execute':{'type':'boolean'}},['python_executable']),
     tool('bridge_status','Read the actual serving plugin version, profile/runtime locations, available skills and registration requirements without starting a model or reading credentials.',{},read_only=True),
     tool('question_list','Inspect scoped ordinary worker questions, originating task/turn and active/turn-based reply availability. Does not expose or approve security requests.',{'project_id':KEY,'thread_id':ID,'include_resolved':{'type':'boolean'}},read_only=True),
     tool('question_reply','Answer an ordinary worker question once. Dedicated active requests resume the same turn; completed-turn questions continue the same worker/task. Security approvals are unsupported.',{'question_key':KEY,'answer_key':KEY,'answer':string('Precise answer; no permissions or secrets.'),'authority':{'type':'string','enum':['technical','documented_requirement','human_decision']},'evidence':string('Authoritative documentation/decision or actual human answer.')},['question_key','answer_key','answer','authority','evidence']),

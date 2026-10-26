@@ -20,6 +20,7 @@ from .authorization import AuthorizationOperations
 from .auditing import AuditOperations
 from .questions import QuestionOperations,QUESTION_TOOL
 from .coordination import CoordinationOperations
+from .runtime import RuntimeOperations
 
 TERMINAL = ('completed', 'failed', 'interrupted')
 SOURCES = ['cli', 'vscode', 'exec', 'appServer', 'unknown']
@@ -33,7 +34,7 @@ def identifier(value):
     return value
 
 
-class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOperations,QuestionOperations,CoordinationOperations):
+class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOperations,QuestionOperations,CoordinationOperations,RuntimeOperations):
     def bridge_status(self):
         from . import __version__
         root=pathlib.Path(__file__).resolve().parents[1]
@@ -41,8 +42,13 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         return {'version':__version__,'registry_schema':schema,'plugin_root':str(root),'coordination_skill':str(root/'skills/conversation-coordinate/SKILL.md'),
                 'specialized_skills':{p.name:str(p/'SKILL.md') for p in (root/'skills').iterdir() if p.is_dir() and (p/'SKILL.md').is_file()},
                 'codex_home':str(pathlib.Path(os.environ.get('CODEX_HOME',pathlib.Path.home()/'.codex'))),'data_dir':str(self.data_dir),
-                'project_scope':self.project_scope,'per_project_plugin_copy_required':False,'production_requires_local_grant_and_registration':True,
-                'note':'This is the version actually serving this MCP connection. Old chats can retain older tool processes. Project configuration may disable an installed plugin; a template alone neither installs tools nor grants authority.'}
+                'project_scope':self.project_scope,'per_project_plugin_copy_required':False,'production_requires_local_grant_and_registration':False,
+                'activation_methods':['coordinator_activate: verified direct human appointment, no second confirmation','coordinator_register: existing local grant'],
+                'caller_probe':{'challenge':self.caller_challenge,
+                    'command':[sys.executable,'-I','-B','-S',str(root/'caller.py'),'--challenge',self.caller_challenge],
+                    'instruction':'When MCP lacks CODEX_THREAD_ID, execute this read-only command inside THIS chat shell, then call coordinator_activate on this same connection. It prints a nonce-bound identity into this chat native tool history; no registry write or human grant.'},
+                'routine_runtime_preflight':'runtime_check probes both role policies and can repair standard per-user Windows Python read/execute access.',
+                'note':'This is the version actually serving this MCP connection. Old chats can retain older tool processes. Installation and merely reading a template do not appoint a coordinator.'}
 
     def __init__(self, data_dir=None, transport_factory=AppServer):
         self.data_dir = pathlib.Path(data_dir or os.environ.get('ORCHESTRATOR_DATA_DIR') or
@@ -59,6 +65,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         self.resume_guard = threading.Lock()
         self.loaded = set()
         self.instance = str(uuid.uuid4())
+        self.caller_challenge = uuid.uuid4().hex
         self.stop_heartbeat = threading.Event()
         with self.registry.connect() as db:
             db.execute('INSERT INTO bridges VALUES(?,?,1,?)', (self.instance, os.getpid(), time.time()))
@@ -313,9 +320,9 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         return (inherited+f'\nAssigned role: {role}. Work only on the explicitly authorized project. '
             f'Authorized project root: {root}. Worker workspace: {cwd}. Modify only the worker workspace. '
             'Auditors may inspect artifacts in other registered workspaces of this same project. Do not access unrelated projects, spawn subagents, or contact people. '
-            +conversation_rule+'Use local Python standard-library tools. '
+            +conversation_rule+'Resolve routine technical choices within your assigned task; do not ask the human for repeated work/validation/Python permission. Refer ordinary uncertainty and environment failures to your coordinator. '
             f'The host Python interpreter is {sys.executable}; it may be inaccessible in a worker sandbox. '
-            'Use an accessible installed or bundled Python runtime and -B; one inaccessible interpreter is not proof that no runtime is available. '
+            'Use the project runtime with -B. For stdlib-only diagnostics an accessible installed or bundled runtime may help; never silently substitute it for the project dependency/GPU runtime. Report the exact executable and failure so the coordinator can run runtime_check and repair supported access without a redundant human confirmation. '
             'State observed evidence and limitations. Auditor roles must not modify the implementation. '
             'For an ordinary blocking question use orchestrator_question if available. Otherwise end your turn with exactly ORCHESTRATOR_QUESTION_JSON followed by a newline and a JSON object with question (string), category (technical, requirement, creative or strategic), and sources (array of paths). Do not invent missing requirements. Never use this mechanism for security approvals, permissions, secrets or irreversible confirmations.')
 

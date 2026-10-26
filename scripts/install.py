@@ -1,12 +1,49 @@
 """Install a clean checkout using a verified local Python executable."""
 import argparse,hashlib,json,os,pathlib,re,shlex,shutil,subprocess,sys
+import copy,tomllib,tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+
+
+def approve_coordination_tools(home):
+    """Explicit operator opt-in, limited to this plugin's MCP server."""
+    path=pathlib.Path(home)/'config.toml'
+    source=path.read_text(encoding='utf-8-sig') if path.is_file() else ''
+    before=tomllib.loads(source);expected=copy.deepcopy(before)
+    server=expected.setdefault('plugins',{}).setdefault('conversation-orchestrator@conversation-orchestrator-lab',{}).setdefault('mcp_servers',{}).setdefault('conversation_orchestrator',{})
+    if server.get('default_tools_approval_mode')=='approve':return False
+    server['default_tools_approval_mode']='approve'
+    header='[plugins."conversation-orchestrator@conversation-orchestrator-lab".mcp_servers.conversation_orchestrator]'
+    match=re.search(r'(?m)^'+re.escape(header)+r'[ \t]*$',source)
+    if match:
+        end=re.search(r'(?m)^\s*\[',source[match.end():])
+        stop=match.end()+end.start() if end else len(source)
+        body=source[match.end():stop]
+        if re.search(r'(?m)^default_tools_approval_mode\s*=',body):
+            body=re.sub(r'(?m)^default_tools_approval_mode\s*=.*$', 'default_tools_approval_mode = "approve"',body)
+        else:body+='\ndefault_tools_approval_mode = "approve"\n'
+        changed=source[:match.end()]+body+source[stop:]
+    else:changed=source.rstrip()+'\n\n'+header+'\ndefault_tools_approval_mode = "approve"\n'
+    try:
+        if tomllib.loads(changed)!=expected:raise ValueError('unexpected unrelated change')
+    except (ValueError,tomllib.TOMLDecodeError) as exc:
+        raise SystemExit('Cannot safely update this TOML layout. Existing configuration preserved; set only this plugin MCP server default_tools_approval_mode to approve through your supported settings.') from exc
+    path.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',dir=path.parent,delete=False) as stream:
+        stream.write(changed);temporary=pathlib.Path(stream.name)
+    try:
+        if (path.read_text(encoding='utf-8-sig') if path.is_file() else '')!=source:
+            raise SystemExit('Configuration changed concurrently; it was not overwritten. Retry the same installer opt-in.')
+        os.replace(temporary,path)
+    finally:
+        if temporary.exists():temporary.unlink()
+    return True
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--codex-home',type=pathlib.Path,help='Separate profile; copies no credentials.')
     parser.add_argument('--data-dir',type=pathlib.Path,help='Explicit private registry directory for the installed MCP server.')
+    parser.add_argument('--approve-coordination-tools',action='store_true',help='Explicitly pre-approve only this plugin MCP tools. Project appointment/scope gates and OS/sandbox approvals remain enforced.')
     args=parser.parse_args()
     if sys.version_info<(3,11):raise SystemExit('Python 3.11+ required.')
     if os.name=='nt' and not sys.executable.isascii():raise SystemExit('This Windows launcher requires Python installed at an ASCII path. Install/select an ASCII-path interpreter, then rerun the installer.')
@@ -58,9 +95,12 @@ def main():
         except subprocess.CalledProcessError as exc:
             raise SystemExit('Plugin installation failed. Close Codex chats using this version before replacing its cache; maintainers should use a new version for changed packages.') from exc
     else:print('The identical package is already installed; cache replacement skipped.')
+    if args.approve_coordination_tools:
+        approve_coordination_tools(home)
+        print('Coordination tools pre-approved for this plugin only; project, host and sandbox permission controls remain enforced.')
     print(f'Installed with {version} and Python {sys.version.split()[0]}.')
     print('Start a new Codex chat. Sign in with ChatGPT using codex login before running workers.')
-    print('Production use requires a separate local grant; installation activates no project. No API-key fallback.')
+    print('A direct human appointment activates its exact project through coordinator_activate; no second local grant is needed. Installation alone appoints nobody. No API-key fallback.')
 
 
 if __name__=='__main__':main()

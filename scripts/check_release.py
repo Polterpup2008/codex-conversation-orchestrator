@@ -18,7 +18,7 @@ ALLOWED=['.gitignore','.agents/plugins/marketplace.json','.github/workflows/ci.y
          'plugin/skills/audit-arbiter/SKILL.md','plugin/skills/audit-arbiter/agents/openai.yaml',
          'plugin/skills/architecture-guard/SKILL.md','plugin/skills/architecture-guard/agents/openai.yaml',
          'docs/*.md','scripts/install.py','scripts/authorize.py','scripts/check_release.py',
-         'tests/test_registry.py','tests/test_upgrade.py','tests/test_production.py','tests/test_advanced.py','tests/legacy_fixture.py','tests/mcp_client.py','tests/live_smoke.py']
+         'tests/test_registry.py','tests/test_upgrade.py','tests/test_production.py','tests/test_advanced.py','tests/test_autonomy.py','tests/legacy_fixture.py','tests/mcp_client.py','tests/live_smoke.py']
 REQUIRED=['README.md','INSTALL.md','LICENSE','ORCHESTRATOR_PROMPT.md','orchestrator.md',
           'docs/VALIDATION.md','plugin/plugin.json','plugin/mcp.json','plugin/server.py',
           'plugin/skills/conversation-coordinate/SKILL.md','scripts/install.py','scripts/authorize.py','tests/legacy_fixture.py']

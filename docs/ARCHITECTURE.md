@@ -6,6 +6,8 @@ The Python MCP server uses JSON-RPC over stdio. It launches official `codex app-
 |---|---|
 | `plugin/server.py` | MCP envelopes, bounded request handling and draining shutdown. |
 | `authorization.py` | Local grants, connection scope and coordinator leases. |
+| `appointment.py` | Corroborate direct native human designation, without a second grant question. |
+| `runtime.py` | Dual-policy version preflight and bounded per-user Windows Python RX repair. |
 | `projects.py` | Canonical paths, worktrees, discovery and native attachment records. |
 | `routing.py` | Catalog, validation, routing and persistent preferences. |
 | `auditing.py` | Delivery/revision/artifact-bound independent audit checks. |
@@ -16,7 +18,7 @@ The Python MCP server uses JSON-RPC over stdio. It launches official `codex app-
 | `questions.py` | Dedicated ordinary-question requests, durable replies, completed-turn fallback and human escalation. |
 | `coordination.py` | Expertise profiles, immutable context packets/plans, versioned contracts and audit assessments. |
 
-The authorization CLI is outside MCP. It verifies an actual coordinator's primary cwd before creating a production grant. Registration obtains a lease tied to a live bridge. Dead-owner detection uses bridge identity and local process liveness; ambiguous deliveries remain reserved after crashes.
+`coordinator_activate` materializes an existing direct human appointment after checking native provenance, actual chat/root and ownership. It creates the same scoped authorization used by optional local operator provisioning. The installed `activate.py` compatibility helper prepares this authority for chats retaining older tool lists, then exits so the original MCP connection can register. Registration obtains a lease tied to a live bridge. Dead-owner detection uses bridge identity and local process liveness; ambiguous deliveries remain reserved after crashes. No schema change is required in 0.5; bounded appointment proof is stored as a private decision note.
 
 Project IDs identify grants and cannot contain colons. UUIDs identify actual Codex conversations. Short task/message/create keys are automatically prefixed with the bound project namespace; returned prefixed keys may be reused directly. Task ownership is immutable; dependencies must already exist in the same project. Root overlap, overlap with registered external worker workspaces, redirected roots and unrelated workspaces are rejected.
 
@@ -24,7 +26,9 @@ Project IDs identify grants and cannot contain colons. UUIDs identify actual Cod
 
 | Tool | Supported operation |
 |---|---|
-| `project_create` | Register a new empty experimental workspace; production setup uses the local CLI. |
+| `project_create` | Register a new empty experimental workspace; existing projects use appointment activation or local provisioning. |
+| `coordinator_activate` | Verify the already-given direct human appointment and activate its exact project without another confirmation. |
+| `runtime_check` | Version-only probes under both role policies; supported Windows per-user Python RX maintenance. |
 | `coordinator_register` | Bind to one granted project/exact coordinator and obtain its lease. |
 | `project_status` | Scoped projects, workers, tasks, decisions, verdicts and unresolved deliveries. |
 | `project_note` | Store a decision, problem or resolution. |

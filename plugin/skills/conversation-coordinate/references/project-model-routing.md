@@ -4,7 +4,7 @@ Validated runtime: Codex CLI 0.164.0-alpha.11.1 on Windows. Project operations, 
 
 ## Activation
 
-The operator creates a grant for one existing root, native project ID and exact coordinator UUID with scripts/authorize.py. A deliberate --headless grant omits native grouping. The coordinator calls coordinator_register, then uses only its scoped state. This cannot be used to take over another live coordinator connection. Close the old connection and complete an explicit local revoke/grant handoff when replacing it. Installation does not grant authority.
+The human directly appoints one chat. That chat uses coordinator_activate with the exact existing directive and observed native project ID; no second grant/confirmation is needed. An already authorized chat uses coordinator_register. An older tool list can use the current installed activate.py helper first, preserving its own ID/history. A deliberate headless appointment/grant omits native grouping. Activation cannot take over another live coordinator or undo revocation. Close the old connection and complete a resolved explicit handoff when replacing it. Installation and reading a template do not appoint anyone.
 
 ## Native attachment
 

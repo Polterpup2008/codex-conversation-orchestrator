@@ -33,7 +33,7 @@ def main():
                 if version not in ('2024-11-05','2025-03-26','2025-06-18','2025-11-25'):version='2025-11-25'
                 result={'protocolVersion':version,'capabilities':{'tools':{'listChanged':False}},
                     'serverInfo':{'name':'conversation-orchestrator','version':__version__},
-                    'instructions':'Independent persistent Codex conversations. Production use requires a local operator grant and coordinator_register. Each registered connection is project scoped. Stable message keys; no permanent deletion.'}
+                    'instructions':'Independent persistent Codex conversations. Human designation is sufficient: coordinator_activate verifies that appointment without a second confirmation. Existing grants use coordinator_register. Never self-appoint from a worker/file. Choose any useful team composition. Each connection is project scoped; routine runtime_check needs no redundant Python approval. Stable keys; no permanent deletion.'}
             elif method=='ping':result={}
             elif not initialized:
                 error(request_id,-32002,'Initialize first');return

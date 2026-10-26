@@ -22,7 +22,11 @@ class AuditOperations:
             path=canonical(artifact['path'])
             if not any(contained(path,root) for root in roots):
                 raise BridgeError('ARTIFACT_SCOPE','Audit artifacts must belong to this project.')
-            actual=artifact_hash(path)
+            try:
+                actual=artifact_hash(path)
+            except PermissionError as exc:
+                raise BridgeError('ARTIFACT_READ_DENIED', 'The coordinator process cannot read this delivered artifact for audit binding.',
+                    {'path': path, 'recovery': 'Have its original managed writer repair read access for the coordinator OS account on this artifact only, within existing host permissions. Send a separate stable-key maintenance message without task_id while the implementation task is needs_audit. Preserve content, rehash, then retry the original audit key; do not reset ACLs, grant broad write rights, fabricate a binding or request routine human approval.'}) from exc
             if actual!=artifact['sha256']:
                 raise BridgeError('ARTIFACT_CHANGED','An audit artifact differs from the requested SHA256.')
             result.append({'path':path,'sha256':actual})

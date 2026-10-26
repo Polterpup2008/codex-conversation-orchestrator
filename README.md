@@ -7,7 +7,7 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 ## Capabilities
 
 - Independent conversation IDs and histories, reuse, bounded waits, interruption and reversible archive/unarchive.
-- Explicit local production grants, one coordinator connection per project, scoped records and keys, and guards against cross-project API operations.
+- Activation from a verified direct human appointment, without a second permission question; one coordinator connection per project, scoped records/keys and cross-project guards. Existing local grants remain supported.
 - Persistent SQLite tasks, ownership, dependencies, decisions, audit verdicts, delivery state and restart reconciliation.
 - Dynamic model/effort discovery, difficulty routing, saved worker preferences, task overrides and per-turn overrides with observed execution settings.
 - Independent task audits bound to the delivery revision and current artifact SHA256 values; coordinator-driven rejection/correction/re-audit loops.
@@ -16,8 +16,10 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 - Ordinary worker questions with same-turn replies through a dedicated dynamic tool, plus durable completed-turn continuation for older conversations. Native approvals remain outside this mechanism.
 - Existing-worker expertise/freshness records, hash-bound context handoffs, dependency plans, shared architecture contracts and declared write-conflict checks.
 - Evidence-based audit assessments, including insufficient evidence and disputed reports, while retaining the existing independent acceptance gate.
+- Python/venv preflight under developer and auditor policies, with bounded Windows per-user Python RX repair and unchanged runtime files.
+- Flexible teams: multiple developers, a shared independent auditor, modelers and other specialists; no mandatory pair or fixed headcount.
 
-**Compatibility:** live integration targets Windows and Codex CLI `0.164.0-alpha.11.1`. Project APIs are experimental. This controlled production-mode release has documented platform limits; it does not promise universal compatibility, unattended background coordination, hostile-tenant isolation or automatic sidebar control from a standalone MCP server. Read the [advanced validation report](docs/ADVANCED_VALIDATION.md) and retained [baseline qualification](docs/VALIDATION.md).
+**Compatibility:** live integration targets Windows and Codex CLI `0.164.0-alpha.11.1`. Project APIs are experimental. This controlled production-mode release has documented platform limits; it does not promise universal compatibility, unattended background coordination, hostile-tenant isolation or automatic sidebar control from a standalone MCP server. Read the [autonomy qualification](docs/AUTONOMY_VALIDATION.md), [advanced validation report](docs/ADVANCED_VALIDATION.md) and retained [baseline qualification](docs/VALIDATION.md).
 
 ## Install
 
@@ -26,7 +28,7 @@ Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscriptio
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.4.3
+git checkout v0.5.4
 python scripts/install.py
 codex login
 ```
@@ -39,13 +41,13 @@ See [INSTALL.md](INSTALL.md) for setup, runtime permissions, native IDs, headles
 
 1. Open the intended local project and designate one actual Codex chat as its coordinator.
 2. Place/customize [orchestrator.md](orchestrator.md) in that project. Its presence does not appoint other workers; keep role identity out of unconditional shared `AGENTS.md` rules.
-3. Authorize the exact root/coordinator using the local operator command in [INSTALL.md](INSTALL.md).
-4. Paste [ORCHESTRATOR_PROMPT.md](ORCHESTRATOR_PROMPT.md) into that chat, supplying its registry project ID and contract location.
-5. The chat loads the coordination skill, calls `coordinator_register`, recovers scoped state and starts only approved work.
+3. Paste [ORCHESTRATOR_PROMPT.md](ORCHESTRATOR_PROMPT.md), or directly say “I appoint this chat as this project's coordinator” and ask it to read the contract.
+4. The chat uses `coordinator_activate` to corroborate that direct human designation and register its real project. No separate routine grant or human confirmation is required. Existing authorizations use `coordinator_register`.
+5. It recovers scoped state, chooses the necessary team and starts only approved work.
 
 Another project may have its own coordinator and workers using the same installation. A bound connection cannot switch projects. Production task/message/creation keys are namespaced, allowing independent reuse of short keys.
 
-The plugin is installed **once per Codex profile**, not copied into every project. Each project needs its own customized contract and explicit local coordinator grant. `bridge_status` reports the version/profile actually serving that chat; an older running chat can retain older tools. A template alone does not install tools or authorize a project.
+The plugin is installed **once per Codex profile**, not copied into every project. Each project needs its own customized contract and human-appointed coordinator. `bridge_status` reports the version/profile actually serving that chat; an older running chat can retain older tools. The installed `activate.py` compatibility entry point lets an already appointed older chat prepare its authorization and then register using its original tools. A template alone does not appoint anyone.
 
 ## Advanced coordination skills
 
@@ -53,7 +55,9 @@ The main `conversation-coordinate` skill dispatches five focused workflows when 
 
 ## Workflow
 
-Write observable requirements → assign one developer → dispatch with a stable key → wait for delivery → commission an independent artifact-bound audit → evaluate evidence → accept or order corrections → re-audit and integrate → retain decisions and safely archive idle workers.
+Write observable requirements → allocate useful specialists → dispatch stable-key tasks → receive deliveries → commission sufficient independent artifact-bound audits → evaluate evidence → accept or order corrections → re-audit and integrate → retain decisions and safely archive idle workers.
+
+Routine planning, worker allocation, methods, tests and Python use are covered by the appointment and approved objective. The coordinator resolves these itself. A shared auditor can review several workers' deliveries with separate evidence. Only genuinely missing product/strategic authority or an actual new permission requires human intervention.
 
 Acknowledgment, turn completion, delivered code, audit verdict, acceptance and integration are distinct. The plugin enforces ownership/freshness gates; the coordinator judges coverage and product correctness. The loop runs while the coordinator operates. There is no hidden background daemon.
 

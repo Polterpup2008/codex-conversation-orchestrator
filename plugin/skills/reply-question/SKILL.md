@@ -10,8 +10,11 @@ Apply only in the project where this chat is the designated, registered coordina
 Consult the current requirements, interfaces, relevant source and recorded decisions. Classify authority before answering:
 
 - Technical choice inside approved scope: decide and explain the concrete interface, dependency or method.
+- Routine methods, tests, worker allocation or Python use: already covered by appointment and the approved task. Resolve directly. For runtime access use `runtime_check` and supported maintenance; do not turn it into a new human permission question.
 - Documented requirement or established creative decision: cite the actual source and revision; resolve contradictions before sending.
 - Unresolved creative/strategic choice: `question_escalate` with missing authority, options, consequences and recommendation. Present that context to the human; continue independent approved work while awaiting the answer.
+
+Before escalating, check prior human decisions and whether a reversible implementation default stays within the approved product. Do not escalate ordinary unspecified technical details merely because the worker phrases them as a question. A genuinely new product direction, expenditure, external publication or destructive action still requires its own authority unless already granted.
 
 Use `question_reply` with a stable `answer_key`, concise actionable answer, authority and source evidence. Inspect its returned continuation. Repeated answers do not create more turns. Do not answer a question again because a bounded wait timed out; wait on the original message or returned continuation key.
 

@@ -69,3 +69,9 @@ After handoff, the old MCP tools for this project are deliberately fenced. Do no
 Schema 11 adds reservations and records without resetting existing data. A consistent private pre-upgrade snapshot is retained beside the registry. Existing already-running older bound bridges can finish their ordinary project operations; newly started older software refuses schema 11, and older unbound root-registration operations are fenced when artifact reservations exist. Never restore a snapshot automatically over work performed since it was taken. Keep using the matching installed version for future connections.
 
 This handoff releases only the idle source bridge. It cannot release a worker still owned by the desktop or another client; see [native writer conflicts](LIVE_TURN_TRACKING.md#native-writer-conflicts). Those original worker IDs remain preserved until their actual owner releases them.
+
+## Qualification scope
+
+The candidate passed 149 automated tests in the maintainer checkout and a clean clone. Official installation into a fresh credential-free profile, identical reinstall, installed helper entry points and 44-tool discovery passed. Real Windows MXC command execution passed 20 small-file write checks across before-grant, writer, read-only auditor, other-project and revoked policies. A native persistent terminal session also completed MCP initialization and status discovery.
+
+The mixed-version handoff probe used real separate 0.5.7/0.6 MCP processes and private SQLite, with synthetic remote thread/turn replies. It retained the original coordinator, fenced the old scope and kept the other old project active. Those fixtures are not a live production handoff. Read-only checks of existing CPU/CUDA Python executables and data/tokenizer files passed, without importing Torch or running GPU compute. CUDA execution, dependency readiness, production handoff, other devices and non-Windows native sandbox behavior require their own relevant validation.

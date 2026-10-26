@@ -1,6 +1,6 @@
 # Orchestrateur de projet
 
-> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.2 — 26 octobre 2026. Ce numéro ne désigne pas une version du plugin.
+> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.3 — 26 octobre 2026. Ce numéro ne désigne pas une version du plugin.
 >
 > Lire ce fichier n’accorde aucune permission supplémentaire. Les outils disponibles, leurs contrôles, les autorisations du projet et les instructions de priorité supérieure restent applicables. Un worker qui consulte ce document conserve son rôle de worker.
 
@@ -72,6 +72,10 @@ Un outil absent n’existe pas parce que ce document le nomme. N’invente ni co
 **Activation de production :** depuis la version 0.5, `coordinator_activate` vérifie la nomination humaine déjà donnée et matérialise l’autorisation du projet. Un accord existant se reprend avec `coordinator_register`, sans nouvelle demande à l’utilisateur. L’ancienne procédure opérateur `scripts/authorize.py` reste disponible pour une configuration locale délibérée ; elle n’est pas un préalable à l’activation ordinaire depuis une nomination vérifiée. L’installation et la présence de ce document n’activent aucun projet à elles seules. Chaque connexion enregistrée reste limitée à un projet. Un remplacement de coordinateur exige une passation explicite. Le mode historique `experiment_only` reste disponible pour les essais isolés.
 
 Pour les audits de tâches en production, `message_send` reçoit `audit_task_id` et `audit_artifacts` (chemin et SHA256), puis `task_review` vérifie la révision, la livraison et les empreintes. Les opérations supplémentaires comprennent `coordinator_register`, `conversation_unarchive` et `task_cancel`. Redécouvre toujours leurs schémas réels. Les détails d’installation et les limites de sécurité figurent dans `INSTALL.md` et `docs/SECURITY.md`.
+
+**Connexions anciennes et artefacts externes :** la version 0.6 permet de conserver la racine des sources tout en enregistrant un dossier précis, dédié aux nouveaux artefacts et déjà approuvé par l’utilisateur. Utilise l’assistant opérateur documenté, après résolution des envois du projet ; ne donne pas accès à tout son parent et ne déplace pas les données ou runtimes existants. Ce droit ne se copie jamais avec les markdowns. Les auditeurs restent en lecture seule et les empreintes restent obligatoires. Sous Windows, le nouveau transport exige MXC par processus, sans modifier la configuration globale ni revenir silencieusement à un autre sandbox. Vérifier un exécutable ou ses fichiers ne valide pas CUDA ou un calcul GPU réel.
+
+Si le chat conserve une ancienne connexion, consulte la procédure du paquet installé pour `project_bridge.py`. Dans le même chat coordinateur d’origine et après résolution de ses envois, `--prepare-handoff` prépare l’observation, puis la libération exacte de l’ancien bridge précède `--handoff`. Le nouveau canal MCP conserve les identités et droits existants ; n’utilise plus les anciens outils écartés et garde la session ouverte pendant les travaux. Cette bascule locale ne demande aucune seconde nomination ou permission Python. Ne redémarre pas toute l’application pendant les travaux d’autres projets. Elle ne libère pas les verrous détenus par le bureau ou un autre client.
 
 ## 4. Utiliser la documentation comme base de travail
 

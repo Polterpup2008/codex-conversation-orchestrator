@@ -12,6 +12,8 @@ Le plugin Conversation Orchestrator s’installe une seule fois par profil Codex
 
 Les anciens contrats à la racine restent utilisables ; conserve un emplacement de référence connu du chat. Une ancienne limite de version ou un rapport `BLOCKED` doit être confronté à l’état actuel, sans écraser les décisions de produit. Les mises à jour des fichiers universels ne réinitialisent ni rôles, ni tâches, ni intégrations autorisées.
 
+Pour une connexion ancienne, la version 0.6 propose une bascule documentée du seul projet via `project_bridge.py`, dans le même chat et après résolution de ses envois : préparation, libération de l’ancien bridge, puis nouveau canal MCP. Aucun redémarrage global ni nouvelle nomination routinière n’est nécessaire. Les dossiers externes de nouveaux artefacts doivent avoir leur propre emplacement approuvé et leur enregistrement précis ; copier ce modèle n’accorde aucun accès. Conserve les données et runtimes existants et vérifie séparément le fonctionnement réel du GPU si le travail l’exige.
+
 Garde les objectifs, spécifications, décisions et passations dans des fichiers séparés, par exemple `CONTEXTE_PROJET.md` ou `COORDINATION.md`. Les identifiants locaux et journaux privés restent dans le registre ou un stockage non publié. Pour un nouveau projet, copie seulement les trois fichiers universels ; ne lui transfère pas les comptes rendus, identifiants, workers ou autorisations du projet précédent.
 
 L’équipe est choisie selon le besoin : plusieurs développeurs, un auditeur partagé, un modélisateur, un architecte ou d’autres spécialistes. Aucun binôme obligatoire. Les livraisons substantielles exigent une vérification indépendante suffisante avant acceptation.

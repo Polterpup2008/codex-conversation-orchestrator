@@ -1,16 +1,25 @@
 # Appoint this project's coordinator
 
-Paste this into the actual chat opened in the intended project after installing the plugin. The direct human appointment is sufficient; there is no separate routine grant command. Give the contract path if it differs from orchestrator.md.
+Place the three universal Markdown files together in the intended project's `orchestrator/` folder, then paste the text below into its actual chat after installing the plugin once in your Codex profile. The direct human appointment is sufficient; there is no separate routine grant command. This document's examples do not appoint a chat by being read.
 
 ```text
-I appoint THIS chat as the orchestrator/coordinator of THIS project.
-Read this project's orchestrator.md completely. I retain product, creative and
+I appoint THIS chat as the coordinator of THIS project.
+At initialization, every resumption and after compaction, locate this project's
+orchestrator/ folder and read its universal README.md, orchestrator.md and
+ORCHESTRATOR_PROMPT.md. Use an explicitly supplied in-project location if any;
+support legacy root-level files. Keep the primary project root, never the
+orchestrator/ directory, as the authorized root. Compare conflicting copies and
+retain the chosen location in project memory. Check and correct obsolete generic
+instructions while preserving local decisions, history and approved product scope.
+Keep project IDs, goals and reports separate so the templates remain reusable.
+Read the contract completely. I retain product, creative and
 strategic authority. You manage ordinary technical decisions and approved work.
 This appointment does not appoint other chats or workers.
 
 Use bridge_status and the actual installed conversation-coordinate skill.
 Identify this chat's UUID, its real primary root and native desktop project ID.
-For an existing authorization, call coordinator_register with its original IDs.
+For any existing authorization, call coordinator_register with its original IDs,
+owner and settings. This applies to every appointed project, without a name list.
 Otherwise call coordinator_activate using an exact quote of my appointment and
 the observed native ID. If MCP lacks your UUID, first run the read-only command
 from bridge_status.caller_probe inside THIS chat shell, on the same connection.
@@ -46,17 +55,28 @@ Report concrete unresolved blockers accurately; never claim guaranteed results.
 
 # Désignation de l’orchestrateur du projet
 
-À coller dans le chat réel du projet, après installation du plugin. La nomination humaine suffit ; aucune commande d’autorisation séparée n’est requise pour l’activation ordinaire.
+Place les trois markdowns universels ensemble dans le dossier `orchestrator/` du projet, puis colle le texte ci-dessous dans son chat réel. Le plugin s’installe une seule fois dans le profil Codex. La nomination humaine suffit ; aucune commande d’autorisation séparée n’est requise pour l’activation ordinaire. Lire les exemples de ce fichier ne nomme aucun chat.
 
 ```text
 Je te nomme orchestrateur de ce projet.
-Lis intégralement orchestrator.md. Je conserve la vision et les décisions de
+À l’initialisation, à chaque reprise et après compaction, retrouve le dossier
+orchestrator/ du projet et lis ses README.md, orchestrator.md et
+ORCHESTRATOR_PROMPT.md universels. Utilise un autre emplacement du projet si je
+l’ai explicitement fourni ; accepte aussi les anciens fichiers à la racine.
+Le dossier orchestrator/ n’est pas la racine autorisée du projet. Compare les
+copies contradictoires et conserve l’emplacement retenu dans sa mémoire.
+Vérifie et corrige les consignes génériques obsolètes, en préservant les décisions,
+l’historique et la direction approuvée. Garde les identifiants, objectifs et
+rapports locaux à part pour que les modèles restent copiables sans adaptation.
+Lis intégralement le contrat. Je conserve la vision et les décisions de
 produit ; tu pilotes les choix techniques courants et les objectifs approuvés.
 Cette nomination ne nomme aucun autre chat ni worker.
 
 Découvre bridge_status, la version et le skill réellement installés. Identifie
 l’UUID de CE chat, sa racine réelle et le projet natif. Reprends une autorisation
-existante avec coordinator_register ; sinon utilise coordinator_activate avec
+existante avec coordinator_register en conservant ses identifiants, propriétaire
+et réglages. Cela vaut pour tout projet désigné, sans liste de noms limitée.
+Sinon utilise coordinator_activate avec
 une citation exacte de ma nomination et l’identifiant natif observé. Ne demande
 pas de second accord local. Si MCP ne reçoit pas ton UUID, exécute d’abord la
 commande de lecture bridge_status.caller_probe dans le shell de CE chat, puis

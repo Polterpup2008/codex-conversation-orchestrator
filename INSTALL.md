@@ -20,12 +20,11 @@ codex --version
 
 This is an alpha dependency with experimental project APIs. Select a compatible build deliberately; the installer minimum-version check does not certify arbitrary newer builds.
 
-## Install a released checkout
+## Install
 
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.5.7
 python scripts/install.py --approve-coordination-tools
 codex login
 ```
@@ -42,7 +41,7 @@ Upgrades retain private copies of validated previous packages and restore only m
 
 To explicitly pre-approve routine calls to this plugin only, install with `python scripts/install.py --approve-coordination-tools`. This opt-in sets only its MCP server's `default_tools_approval_mode="approve"`, preserving other configuration. Direct-human appointment, project/lease checks, OS permissions and sandbox controls still apply. It neither pre-approves other plugins nor answers native command/file approvals. This avoids repeated routine plugin prompts after the operator has chosen autonomous coordination.
 
-Installation is shared by chats using the same `CODEX_HOME` profile. **Do not copy the plugin/cache into individual project folders.** Put only each project's customized `orchestrator.md` there and designate its coordinator directly. `bridge_status` shows the actually loaded version and skill/profile paths. An unregistered connection can show `experiment_only` even though the package supports production. Activate the already appointed chat; do not turn this state into a redundant human grant question. A different profile or explicit project plugin-disable setting needs its own configuration check.
+Installation is shared by chats using the same `CODEX_HOME` profile. **Do not copy the plugin/cache into individual project folders.** Copy the three universal Markdown files in [templates/orchestrator/](templates/orchestrator/) into each project's `orchestrator/` folder and designate its coordinator directly. Keep project-specific decisions and state separate. `bridge_status` shows the actually loaded version and skill/profile paths. An unregistered connection can show `experiment_only` even though the package supports production. Activate the already appointed chat; do not turn this state into a redundant human grant question. A different profile or explicit project plugin-disable setting needs its own configuration check.
 
 The 0.5 release adds appointment activation and runtime preflight (44 MCP tools total), retaining the five specialized skills and schema 10. Existing authorizations/IDs remain valid. Old active question responses cannot be replayed on a new transport generation: finish or reconcile pending work before upgrading/restarting, retain original IDs/keys, and use a fresh continuation only after the original outcome is known. No API key is required.
 
@@ -56,7 +55,7 @@ This copies no credentials. Workers in that separate profile require their own C
 
 ## Authorize a real project
 
-Installation activates no project. Choose one actual Codex chat as coordinator, and open the intended project root in it. Read/copy the [orchestrator template](orchestrator.md) into that project's chosen location; keep a project's existing customized contract when present. The template is a role-specific document, not an identity rule for every worker in `AGENTS.md`.
+Installation activates no project. Choose one actual Codex chat as coordinator, and open the intended project root in it. Copy [templates/orchestrator/](templates/orchestrator/) there; legacy root-level files and explicit in-project contract locations remain supported. Preserve existing local decisions when updating generic instructions. At initialization, resumption and after compaction, locate the folder and check its universal Markdown files before recovering local state. The authorized root is the project root, not its `orchestrator/` subdirectory. The template is a role-specific document, not an identity rule for every worker in `AGENTS.md`; the portable folder's README includes a conditional discovery instruction. Existing authorizations, owners and settings are resumed for every appointed project, without a list of hardcoded project names.
 
 Using the hosting Codex tools, identify:
 

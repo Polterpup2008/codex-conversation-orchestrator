@@ -28,26 +28,25 @@ Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscriptio
 ```powershell
 git clone https://github.com/Polterpup2008/codex-conversation-orchestrator.git
 cd codex-conversation-orchestrator
-git checkout v0.5.7
 python scripts/install.py --approve-coordination-tools
 codex login
 ```
 
-The installer uses official plugin commands and a contained launcher for the verified Python interpreter. Start a new chat afterward. The plugin ID remains `conversation-orchestrator@conversation-orchestrator-lab` for upgrade compatibility. Installation activates no project.
+The installer uses official plugin commands and a contained launcher for the verified Python interpreter. Reload Codex afterward to refresh the tool inventory; existing chats and appointments can be resumed. The plugin ID remains `conversation-orchestrator@conversation-orchestrator-lab` for upgrade compatibility. Installation activates no project.
 
 See [INSTALL.md](INSTALL.md) for setup, runtime permissions, native IDs, headless mode, upgrades and troubleshooting.
 
 ## Appoint a coordinator
 
 1. Open the intended local project and designate one actual Codex chat as its coordinator.
-2. Place/customize [orchestrator.md](orchestrator.md) in that project. Its presence does not appoint other workers; keep role identity out of unconditional shared `AGENTS.md` rules.
+2. Copy [templates/orchestrator/](templates/orchestrator/) into that project as `orchestrator/`. Its three universal Markdown files need no project-specific edits. Keep local goals, IDs and handoffs separate. Its presence does not appoint other workers; keep role identity out of unconditional shared `AGENTS.md` rules.
 3. Paste [ORCHESTRATOR_PROMPT.md](ORCHESTRATOR_PROMPT.md), or directly say “I appoint this chat as this project's coordinator” and ask it to read the contract.
 4. The chat uses `coordinator_activate` to corroborate that direct human designation and register its real project. No separate routine grant or human confirmation is required. Existing authorizations use `coordinator_register`.
 5. It recovers scoped state, chooses the necessary team and starts only approved work.
 
 Another project may have its own coordinator and workers using the same installation. A bound connection cannot switch projects. Production task/message/creation keys are namespaced, allowing independent reuse of short keys.
 
-The plugin is installed **once per Codex profile**, not copied into every project. Each project needs its own customized contract and human-appointed coordinator. `bridge_status` reports the version/profile actually serving that chat; an older running chat can retain older tools. The installed `activate.py` compatibility entry point lets an already appointed older chat prepare its authorization and then register using its original tools. A template alone does not appoint anyone.
+The plugin is installed **once per Codex profile**, not copied into every project. Each project uses the same portable contract and its own human-appointed coordinator and local state. At initialization and each resumption, the coordinator discovers its `orchestrator/` directory and checks the universal Markdown files. Legacy root-level contracts remain supported. Existing permissions are preserved for every appointed project, without a hardcoded list of project names. `bridge_status` reports the version/profile actually serving that chat; an older running chat can retain older tools. The installed `activate.py` compatibility entry point lets an already appointed older chat prepare its authorization and then register using its original tools. A template alone does not appoint anyone.
 
 ## Advanced coordination skills
 

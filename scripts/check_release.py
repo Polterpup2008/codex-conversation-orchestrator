@@ -7,6 +7,8 @@ import subprocess
 import sys
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'plugin'))
+from orchestrator.appointment import is_appointment, direct_directive, qualified_appointment, withdraws_appointment
 ALLOWED=['.gitignore','.agents/plugins/marketplace.json','.github/workflows/ci.yml',
          'README.md','INSTALL.md','LICENSE','CONTRIBUTING.md','ORCHESTRATOR_PROMPT.md','orchestrator.md',
          'plugin/*.py','plugin/*.json','plugin/orchestrator/*.py',
@@ -17,9 +19,11 @@ ALLOWED=['.gitignore','.agents/plugins/marketplace.json','.github/workflows/ci.y
          'plugin/skills/task-planner/SKILL.md','plugin/skills/task-planner/agents/openai.yaml',
          'plugin/skills/audit-arbiter/SKILL.md','plugin/skills/audit-arbiter/agents/openai.yaml',
          'plugin/skills/architecture-guard/SKILL.md','plugin/skills/architecture-guard/agents/openai.yaml',
-         'docs/*.md','scripts/install.py','scripts/authorize.py','scripts/check_release.py',
+         'docs/*.md','templates/orchestrator/README.md','templates/orchestrator/orchestrator.md',
+         'templates/orchestrator/ORCHESTRATOR_PROMPT.md','scripts/install.py','scripts/authorize.py','scripts/check_release.py',
          'tests/test_registry.py','tests/test_upgrade.py','tests/test_production.py','tests/test_advanced.py','tests/test_autonomy.py','tests/legacy_fixture.py','tests/mcp_client.py','tests/live_smoke.py']
 REQUIRED=['README.md','INSTALL.md','LICENSE','ORCHESTRATOR_PROMPT.md','orchestrator.md',
+          'templates/orchestrator/README.md','templates/orchestrator/orchestrator.md','templates/orchestrator/ORCHESTRATOR_PROMPT.md',
           'docs/VALIDATION.md','plugin/plugin.json','plugin/mcp.json','plugin/server.py',
           'plugin/skills/conversation-coordinate/SKILL.md','scripts/install.py','scripts/authorize.py','tests/legacy_fixture.py']
 SECRET_PATTERNS=[r'gh[pousr]_[A-Za-z0-9]{20,}',r'github_pat_[A-Za-z0-9_]{20,}',
@@ -50,6 +54,14 @@ def main():
         if any(value.lower() not in SYNTHETIC for value in UUID.findall(text)):errors.append((path,'non-synthetic conversation UUID'))
     for required in REQUIRED:
         if required not in contents:errors.append((required,'required public file missing'))
+    for name in ('orchestrator.md','ORCHESTRATOR_PROMPT.md'):
+        if contents.get(name)!=contents.get('templates/orchestrator/'+name):
+            errors.append(('templates/orchestrator/'+name,'portable template differs from root contract'))
+    prompts=re.findall(r'```text\s*\n(.*?)```',contents.get('ORCHESTRATOR_PROMPT.md',''),re.S)
+    if len(prompts)!=2 or any(not is_appointment(p.splitlines()[0]) or
+                             not direct_directive(p,p.splitlines()[0]) or
+                             qualified_appointment(p) or withdraws_appointment(p) for p in prompts):
+        errors.append(('ORCHESTRATOR_PROMPT.md','both activation prompts must contain a supported direct appointment'))
     if 'plugin/plugin.json' in contents:
         manifest=json.loads(contents['plugin/plugin.json'])
         if manifest['version'] not in contents.get('plugin/orchestrator/__init__.py',''):errors.append(('plugin/plugin.json','version mismatch'))

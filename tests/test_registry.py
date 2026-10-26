@@ -134,7 +134,7 @@ class CoordinationTests(unittest.TestCase):
         turn_id=str(uuid.uuid4());calls=[]
         def call(method,params):
             calls.append(method)
-            if method=='thread/read': return {'thread':{'status':{'type':'idle'}}}
+            if method=='thread/read': return {'thread':{'status':{'type':'notLoaded'}}}
             return {'data':[{'id':turn_id,'status':'interrupted','items':[]}]}
         self.service._transport=SimpleNamespace(closed=False,active={(self.worker,turn_id)},completed={},guard=threading.RLock(),call=call,close=lambda:None)
         self.service.loaded.add(self.worker)
@@ -142,7 +142,47 @@ class CoordinationTests(unittest.TestCase):
         self.service.registry.set_message('live','sent',turn_id)
         result=self.service.message_status('live')
         self.assertEqual(result['delivery_state'],'sent')
+        self.assertEqual(result['execution_state'],'in_progress')
+        self.assertTrue(result['owner_bridge_active'])
+        self.assertTrue(result['owner_bridge_current'])
+        self.assertFalse(result['owner_bridge_external'])
+        self.assertTrue(result['turn_observed_live'])
         self.assertNotIn('thread/turns/list',calls)
+
+    def test_local_owner_waits_on_its_transport_and_timeout_leaves_work_running(self):
+        turn_id=str(uuid.uuid4());waits=[]
+        self.service._transport=SimpleNamespace(closed=False,active={(self.worker,turn_id)},completed={},
+            guard=threading.RLock(),call=lambda *args:{'thread':{'status':{'type':'notLoaded'}}},
+            wait=lambda *args:waits.append(args),close=lambda:None)
+        self.service.loaded.add(self.worker)
+        self.service.registry.reserve_message('live',self.worker,'instruction','task',self.service.instance)
+        self.service.registry.set_message('live','sent',turn_id)
+        result=self.service.message_wait('live',0)
+        self.assertEqual(waits,[(self.worker,turn_id,0)])
+        self.assertTrue(result['timed_out'])
+        self.assertEqual(result['execution_state'],'in_progress')
+        self.assertEqual(result['task_state'],'running')
+        with self.assertRaises(BridgeError):
+            self.service.task_recover('task',self.service.registry.one('tasks','id','task')['revision'],'Not actually stopped')
+
+    def test_deadline_reconciliation_completion_is_not_reported_as_timeout(self):
+        turn_id=str(uuid.uuid4())
+        def wait(*args):
+            self.service._transport.active.clear()
+            self.service.registry.completed(self.worker,{'id':turn_id,'status':'completed','itemsView':'full',
+                'items':[{'type':'agentMessage','text':'Delivery requiring independent audit.'}]})
+            return None  # completion committed at the timeout boundary
+        self.service._transport=SimpleNamespace(closed=False,active={(self.worker,turn_id)},completed={},
+            guard=threading.RLock(),call=lambda *args:{'thread':{'status':{'type':'notLoaded'}}},wait=wait,close=lambda:None)
+        self.service.loaded.add(self.worker)
+        self.service.registry.reserve_message('race',self.worker,'instruction','task',self.service.instance)
+        self.service.registry.set_message('race','sent',turn_id)
+        result=self.service.message_wait('race',0)
+        self.assertFalse(result['timed_out'])
+        self.assertEqual(result['delivery_state'],'completed')
+        self.assertEqual(result['execution_state'],'completed')
+        self.assertEqual(result['task_state'],'needs_audit')
+        self.assertFalse(result['task_verified'])
 
     def test_cross_bridge_observer_does_not_resume_owner(self):
         self.service.registry.reserve_message('owned',self.worker,'instruction',None,self.service.instance)
@@ -150,6 +190,10 @@ class CoordinationTests(unittest.TestCase):
         try:
             result=observer.message_status('owned')
             self.assertTrue(result['owner_bridge_active'])
+            self.assertTrue(result['owner_bridge_external'])
+            self.assertFalse(result['owner_bridge_current'])
+            self.assertIsNone(result['turn_observed_live'])
+            self.assertEqual(result['execution_state'],'owned_elsewhere')
             self.assertIsNone(observer._transport)
             with self.assertRaisesRegex(BridgeError,'different live bridge'):
                 observer.conversation_resume(self.worker)

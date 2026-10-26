@@ -37,7 +37,7 @@ Project IDs identify grants and cannot contain colons. UUIDs identify actual Cod
 | `project_link` | Bind verified canonical identity; granted production identities cannot silently change. |
 | `conversation_list` | List owned workers; unbound legacy discovery can miss unindexed rollouts. |
 | `conversation_create` | Idempotent real worker creation, role, verified workspace and model routing. |
-| `conversation_read` | Read metadata and a page of actual turns. |
+| `conversation_read` | Read metadata and an oldest-first page of persisted turns; follow `nextCursor`. |
 | `conversation_items` | Paginate persisted items, optionally for one turn. |
 | `conversation_resume` | Reload the same ID, refreshing role instructions/sandbox mode. |
 | `conversation_name` | Persist a display name. |
@@ -49,7 +49,7 @@ Project IDs identify grants and cannot contain colons. UUIDs identify actual Cod
 | `conversation_unarchive` | Restore the same ID/history. |
 | `conversation_lifecycle_reconcile` | Reconcile a fenced uncertain lifecycle mutation after releasing/closing its old bridge. |
 | `message_send` | Stable-key dispatch, routing overrides and optional artifact-bound audit request. |
-| `message_status` | Reconcile delivery/output/settings/acceptance; may resume and mutate state. |
+| `message_status` | Reconcile delivery/output/settings/acceptance; distinguish live local execution from external ownership. May resume and mutate state. See [live tracking](LIVE_TURN_TRACKING.md). |
 | `message_wait` | Wait up to 50 seconds, then reconcile once; timeout leaves work running. |
 | `turn_interrupt` | Interrupt the exact managed turn. |
 | `task_assign` | Durable owner, requirements, existing dependencies and routing overrides. |

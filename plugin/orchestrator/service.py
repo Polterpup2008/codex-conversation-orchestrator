@@ -553,6 +553,18 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 self.registry.set_message(message_key, row['state'], result=hydrated)
                 result = hydrated
         if row['state']=='completed':self.registry.reconcile_questions(message_key)
+        # Native persisted history can label an unfinished turn "interrupted"
+        # while another App Server reports that thread as notLoaded. Only this
+        # transport's live set proves local execution; a different live owner
+        # proves ownership, not the turn's current execution state.
+        pending = row['state'] not in TERMINAL
+        local_live = False
+        transport = self._transport
+        if transport:
+            with transport.guard:
+                local_live = pending and not transport.closed and (row['thread_id'],row['turn_id']) in transport.active
+        local_owner = pending and not self._closed and (row.get('owner_token') == self.instance or local_live)
+        execution_state = row['state'] if not pending else 'in_progress' if local_live else 'owned_elsewhere' if external_owner else 'unresolved'
         outputs = [item['text'] for item in (result or {}).get('items', []) if item.get('type') == 'agentMessage']
         task_state = None; task_verified = False
         if row['task_id']:
@@ -562,7 +574,11 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         return {'message_key': message_key, 'thread_id': row['thread_id'], 'turn_id': row['turn_id'],
             'routing':json.loads(row['routing']) if row.get('routing') else None,
             'delivery_state': row['state'], 'turn': result, 'outputs': outputs,
-            'owner_bridge_active': external_owner,
+            'owner_bridge_active': bool(local_owner or external_owner),
+            'owner_bridge_external': external_owner, 'owner_bridge_current': bool(local_owner),
+            'turn_observed_live': bool(local_live) if not external_owner else None,
+            'execution_state': execution_state,
+            'tracking_note': 'notLoaded is observer-local and persisted interrupted can be provisional for an unfinished turn. Use the owning bridge live state; a wait timeout does not stop work or authorize replay.',
             'questions':self.registry.rows("SELECT key,mode,state,payload,task_id FROM questions WHERE message_key=? AND state IN ('pending','escalated','answering')",(message_key,)),
             'task_state': task_state, 'task_verified': task_verified, 'note': 'Turn completion does not imply task acceptance.'}
 
@@ -571,7 +587,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         result = self.message_status(message_key)
         if result['delivery_state'] in TERMINAL:
             return result
-        if result.get('owner_bridge_active'):
+        if result.get('owner_bridge_external'):
             # Cross-process observers do not steal the subscription or repeatedly poll.
             self.stop_heartbeat.wait(timeout_seconds)
             result = self.message_status(message_key)
@@ -582,7 +598,8 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         if turn:
             self.registry.completed(row['thread_id'], turn)
         # One reconciliation at the deadline catches missed notifications. No polling loop.
-        return {**self.message_status(message_key), 'timed_out': turn is None}
+        final = self.message_status(message_key)
+        return {**final, 'timed_out': final['delivery_state'] not in TERMINAL}
 
     def turn_interrupt(self, message_key):
         row = self.registry.one('messages', 'key', message_key)

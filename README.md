@@ -7,6 +7,7 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 ## Capabilities
 
 - Independent conversation IDs and histories, reuse, bounded waits, interruption and reversible archive/unarchive.
+- Explicit live local execution versus external ownership, avoiding false interruption reports from another App Server's persisted history; see [turn tracking](docs/LIVE_TURN_TRACKING.md).
 - Activation from a verified direct human appointment, without a second permission question; one coordinator connection per project, scoped records/keys and cross-project guards. Existing local grants remain supported.
 - Persistent SQLite tasks, ownership, dependencies, decisions, audit verdicts, delivery state and restart reconciliation.
 - Dynamic model/effort discovery, difficulty routing, saved worker preferences, task overrides and per-turn overrides with observed execution settings.

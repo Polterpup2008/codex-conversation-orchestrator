@@ -29,6 +29,20 @@ Wait on the original key while its owner is live. Do not discard keys, edit the 
 
 Only after the send is reconciled to terminal `interrupted` or `failed`, and all other task sends are resolved, may the coordinator use `task_recover` with the current revision and observed reason. A deliberate continuation then uses a new message key and preserves the previous attempt. A `completed` turn still requires delivery inspection and the task's independent acceptance checks. No recovery operation starts product work automatically.
 
+## Native writer conflicts
+
+An actual `thread/resume` refusal saying `already has an active writer` is separate from the provisional history status described above. The desktop can load an idle worker and retain its exclusive native writer after navigation away. A bridge's ownership flag does not identify that file-lock owner. On Windows an operator can use a read-only Restart Manager resource query to identify which process holds the exact worker's native writer-lock file; neither the file's existence nor an empty file proves ownership.
+
+Use native resume logs and the actual tool-call timeline before assigning the cause to a history reader. A history read performed after the desktop's earlier resume cannot explain its initial acquisition. Do not infer who initiated a desktop navigation from the existence of that navigation alone.
+
+If resume fails before the dispatch boundary, the plugin retains a terminal failed message with `turn_start_dispatched=false` and no turn ID. No audit started. An implementation awaiting that audit remains `needs_audit`; a failed audit dispatch alone is not a reason to recover or reset the implementation task.
+
+Release a writer through its owning client. `bridge_release` closes only the current bridge's idle transport; it cannot release a desktop writer and refuses active or uncertain owned sends. The CLI protocol exposes `thread/unsubscribe`, but this standalone plugin has no host tool that invokes it through the desktop's owning connection. A separate App Server is not a supported way to take over that subscription. Do not delete locks, edit native state, kill processes, force a competing resume, or automatically archive/unarchive the worker.
+
+When a desktop-owned idle writer cannot be released through a supported owning-client operation, defer a full desktop exit/restart until **all managed sends across the desktop are resolved and workers are inactive**. Navigating away or refreshing only a renderer is not proof of writer release. Resume the same designated coordinator afterward, keep the original worker IDs/history/permissions, and avoid opening the worker in the desktop before the plugin resumes it with its role and sandbox policy. Reconcile the old failed key, recheck the task revision and artifact hashes, then use a distinct continuation key. No new human nomination or grant is required.
+
+After any owning-client release, verify that the original plugin can actually resume the worker before declaring it recovered; a newly restored desktop view can acquire a new writer. If other authorized work must continue, the coordinator may select another qualified independent auditor or create one using the existing project workflow. Keep the locked worker and failed attempt intact. This is an alternative allocation, not an unlock or an acceptance of the delivery. Do not delay independent work just to obtain a global restart window.
+
 ## Validation of the tracking patch
 
 The 0.5.8 regression suite has 122 passing tests, including a live acknowledgment protected from provisional history, a separate observer that never resumes the owner, a local wait that leaves running work intact, and a completion committed at the deadline. The latter regression fails against the preceding implementation and passes with the patch. Existing interrupted-task recovery and independent acceptance tests remain in place.

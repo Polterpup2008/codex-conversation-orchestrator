@@ -130,13 +130,13 @@ Control mutations are serialized briefly across the private registry; worker tur
 
 | Symptom | Action |
 |---|---|
-| No tools / old tool list | Start a new chat; inspect the installed package/version and local logs. Verify that the installer completed. |
+| No tools / old tool list | Inspect the installed package/version and local logs. Once managed sends are resolved, reload the host and resume the same designated chat. A replacement chat is not required. |
 | Bare Python missing in app PATH | Run the installer using a verified Python interpreter; it generates a contained runtime launcher. |
 | Windows cache backup access denied | Close chats holding that package before reinstalling the same version. Do not delete active caches. |
 | `PROJECT_NOT_AUTHORIZED` | If already human-appointed, use `coordinator_activate` or installed `activate.py`, then original registration. Check the exact IDs/profile/state directory; do not ask for a second routine grant. |
 | `COORDINATOR_CONFLICT` | Close the other live connection or complete an explicit handoff. Do not rewrite its lease. |
 | `DESKTOP_SYNC_REQUIRED` | Use the skill's metadata-only temporary-pin/move/restore workflow, then observe actual grouping. Avoid opening the worker and taking its writer. Matching cwd alone is insufficient. |
-| Writer lock / another client owns thread | Close the competing client, release an idle owning bridge, then reconcile the same ID. Do not automatically archive arbitrary chats. |
+| Writer lock / another client owns thread | Identify the actual owning process; an idle desktop-loaded worker can retain its native writer. `bridge_release` releases only that bridge's idle transport, not a desktop writer. Do not restart the host while any managed work is active. See [writer recovery](docs/LIVE_TURN_TRACKING.md#native-writer-conflicts). Never delete locks or use automatic archive roundtrips. |
 | Model/effort unavailable | Refresh `model_list`; explicit choices are rejected without hidden substitution. |
 | Subscription throttling / network failure | Retain the same message key, inspect actual status, and wait/reconcile. Do not flood retries or switch to API-key billing. |
 | Python inaccessible inside worker | Run `runtime_check` on the actual project executable and inspect both role results. Repair supported RX access autonomously; use bundled Python only for suitable stdlib diagnostics, never a silent dependency/GPU substitution. |

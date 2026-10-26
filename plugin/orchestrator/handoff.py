@@ -69,7 +69,9 @@ def recent_release_proof(thread,after,release,codex_home=None,now=None):
                     proof={'source':'native_owner_bridge_release','call_id':item['call_id'],'line':number,'timestamp':start,
                            'owner_token':release['token'],'control_revision':release['revision']}
     current=time.time() if now is None else now
-    if not meta or meta.get('id')!=thread['id'] or path_key(meta['cwd'])!=path_key(thread['cwd']) or not proof or proof['timestamp']<after or not 0<=current-proof['timestamp']<=300:
+    # Native ISO timestamps round to micro/milliseconds while Python/SQLite
+    # clocks retain different precision. The durable revision proves ordering.
+    if not meta or meta.get('id')!=thread['id'] or path_key(meta['cwd'])!=path_key(thread['cwd']) or not proof or proof['timestamp']<after-0.001 or not -0.001<=current-proof['timestamp']<=300:
         raise BridgeError('BRIDGE_RELEASE_REQUIRED','After prepare-handoff and all project sends resolve, execute exactly: '+RELEASE_COMMAND+' Then start --handoff within five minutes. A report or another bridge release is insufficient.')
     return proof
 

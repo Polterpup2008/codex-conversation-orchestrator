@@ -153,6 +153,14 @@ class ProjectBridgeHandoffTests(unittest.TestCase):
                 db.execute("INSERT INTO control_lock VALUES(1,?,'conversation_resume')",(self.old.instance,))
         self.assertEqual(self.other.project_status('beta')['projects'][0]['id'],'beta')
 
+    def test_native_timestamp_rounding_is_allowed_but_future_or_preparation_gaps_are_not(self):
+        thread=self.meta[self.ids['alpha']]
+        release=self.old.registry.rows('SELECT * FROM bridge_control_activity WHERE token=?',(self.old.instance,))[0]
+        proof=recent_release_proof(thread,0,release);stamp=proof['timestamp']
+        self.assertEqual(recent_release_proof(thread,stamp+0.000001,release,now=stamp-0.000001)['control_revision'],release['revision'])
+        for after,now in ((stamp+1,stamp+2),(stamp-1,stamp-1)):
+            with self.assertRaises(BridgeError):recent_release_proof(thread,after,release,now=now)
+
     def test_completed_fallback_question_reply_invalidates_owner_release(self):
         worker=self.add_worker();turn=str(uuid.uuid4());r=self.old.registry
         r.reserve_message('alpha::question-source',worker,'Original technical question',None,self.old.instance)

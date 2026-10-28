@@ -46,10 +46,18 @@ class ProjectBridgeHandoffTests(unittest.TestCase):
         project_bridge_prepare(self.new,'alpha')
         self.write_release()
 
-    def write_release(self,age=0,mutation=False,fork=False,command=RELEASE_COMMAND,owner=None,output=None):
+    def write_release(self,age=0,mutation=False,fork=False,command=RELEASE_COMMAND,owner=None,output=None,correlate_owner=None):
         stamp=datetime.datetime.fromtimestamp(time.time()-age,datetime.timezone.utc).isoformat()
         result=(owner or self.old).bridge_release()
         end=datetime.datetime.fromtimestamp(time.time()-age,datetime.timezone.utc).isoformat()
+        if correlate_owner:
+            # This counterexample deliberately pairs another connection's
+            # success with the failed owner's generation. Make that temporal
+            # ambiguity deterministic even on a slow/loaded CI runner, so the
+            # test reaches the OS-owner fence rather than an earlier clock gate.
+            activity=self.old.registry.rows('SELECT * FROM bridge_control_activity WHERE token=?',(correlate_owner.instance,))[0]
+            stamp=datetime.datetime.fromtimestamp(activity['started'],datetime.timezone.utc).isoformat()
+            end=datetime.datetime.fromtimestamp(activity['finished'],datetime.timezone.utc).isoformat()
         thread=self.meta[self.ids['alpha']]
         rows=[{'type':'session_meta','payload':{'id':self.ids['alpha'],'cwd':str(self.roots['alpha']),'timestamp':stamp}},
             {'type':'response_item','timestamp':stamp,'payload':{'type':'custom_tool_call','name':'exec','call_id':'release-call','input':command}},
@@ -175,7 +183,7 @@ class ProjectBridgeHandoffTests(unittest.TestCase):
         worker=self.add_worker();self.old.conversation_resume(worker)
         transport=self.old.rpc;transport.pending[1]='pending metadata request'
         with self.assertRaisesRegex(BridgeError,'pending'):self.old.bridge_release()
-        self.write_release(owner=self.new)
+        self.write_release(owner=self.new,correlate_owner=self.old)
         before=self.old.registry.rows('SELECT * FROM authorizations')
         with self.assertRaisesRegex(BridgeError,'child processes'):project_bridge_register(self.new,'alpha',True)
         self.assertFalse(transport.closed);self.assertIn(worker,self.old.loaded)

@@ -34,11 +34,26 @@ class ExistingGrantOptionsTests(unittest.TestCase):
 
     def test_updates_keep_existing_ui_mode_and_add_integrations(self):
         grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],desktop_ui_id='existing-ui',integrations=['mcp_servers.old'])
-        self.assertEqual(self.options(allow_integration=['mcp_servers.new']),{'desktop_ui_id':'existing-ui','headless':False,'integrations':['mcp_servers.new','mcp_servers.old']})
+        options=self.options(allow_integration=['mcp_servers.new']);self.assertIn('expected_state',options)
+        options.pop('expected_state')
+        self.assertEqual(options,{'desktop_ui_id':'existing-ui','headless':False,'integrations':['mcp_servers.new','mcp_servers.old']})
 
     def test_omitted_options_preserve_existing_headless_and_all_permissions(self):
         grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],headless=True,integrations=['plugins.example'])
-        self.assertEqual(self.options(),{'desktop_ui_id':None,'headless':True,'integrations':['plugins.example']})
+        options=self.options();options.pop('expected_state')
+        self.assertEqual(options,{'desktop_ui_id':None,'headless':True,'integrations':['plugins.example']})
+
+    def test_stale_additive_update_cannot_restore_removed_permission_or_old_ui(self):
+        grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],desktop_ui_id='original-ui',integrations=['mcp_servers.old'])
+        stale=self.options(allow_integration=['mcp_servers.new'])
+        grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],desktop_ui_id='replacement-ui',integrations=[])
+        before=self.a.registry.rows('SELECT * FROM authorizations')
+        with self.assertRaises(BridgeError) as caught:grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],**stale)
+        self.assertEqual(caught.exception.code,'GRANT_CHANGED');self.assertEqual(self.a.registry.rows('SELECT * FROM authorizations'),before)
+        self.assertEqual(self.a.registry.one('projects','id','alpha')['desktop_ui_project_id'],'replacement-ui')
+        fresh=self.options(allow_integration=['mcp_servers.new']);grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],**fresh)
+        self.assertEqual(json.loads(self.a.registry.one('authorizations','project_id','alpha')['integrations']),['mcp_servers.new'])
+        self.assertEqual(self.a.registry.one('projects','id','alpha')['desktop_ui_project_id'],'replacement-ui')
 
     def test_explicit_replacement_is_required_to_remove_integrations(self):
         grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],headless=True,integrations=['mcp_servers.old'])

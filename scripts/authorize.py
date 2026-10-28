@@ -20,7 +20,8 @@ def existing_grant_options(registry,args):
     headless=bool(args.headless) if args.headless is not None else bool(prior['headless']) if prior and args.desktop_ui_project_id is None else False
     integrations=set(args.allow_integration)
     if prior and not args.replace_integrations:integrations.update(json.loads(prior['integrations']))
-    return {'desktop_ui_id':ui,'headless':headless,'integrations':sorted(integrations)}
+    return {'desktop_ui_id':ui,'headless':headless,'integrations':sorted(integrations),
+            'expected_state':{'authorization':previous[0] if previous else None,'project':projects[0] if projects else None}}
 
 
 def main():

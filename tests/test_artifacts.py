@@ -15,6 +15,7 @@ from orchestrator.artifacts import artifact_root_grant
 from orchestrator.auditing import artifact_hash
 from orchestrator.authorization import grant_project
 from orchestrator.errors import BridgeError
+from orchestrator.projects import path_key
 from orchestrator.service import Service
 from orchestrator.storage import Registry
 from orchestrator.transport import AppServer
@@ -284,6 +285,20 @@ class ArtifactRootTests(unittest.TestCase):
             self.assertEqual(result['worker']['capabilities'],'["git-write"]')
             self.assertEqual(client.call('project_status',project_id='alpha')['projects'][0]['root'],str(root))
         finally:client.close()
+
+    def test_local_git_policy_timeout_is_failed_before_dispatch_and_does_not_strand_worker(self):
+        root=self.roots['alpha'];subprocess.run(['git','init','--quiet',str(root)],check=True)
+        worker=self.worker()['thread_id'];self.a.conversation_role(worker,'Developer',['git-write'])
+        with patch('orchestrator.projects.common_git_dir',side_effect=[path_key(root/'.git'),BridgeError('GIT_INSPECTION_TIMEOUT','Recorded local inspection timeout')]):
+            with self.assertRaises(BridgeError) as caught:self.a.message_send(worker,'Local fixture','git-timeout')
+        self.assertEqual(caught.exception.code,'GIT_INSPECTION_TIMEOUT')
+        failed=self.a.registry.one('messages','key','git-timeout')
+        self.assertEqual(failed['state'],'failed');self.assertIsNone(failed['turn_id'])
+        self.assertFalse(json.loads(failed['result'])['turn_start_dispatched'])
+        self.assertFalse(any(method=='turn/start' for method,params in self.a.rpc.calls))
+        self.assertFalse(self.a.registry.rows('SELECT * FROM operations'))
+        resumed=self.a.message_send(worker,'Deliberate continuation after local failure','git-recovered')
+        self.assertEqual(resumed['delivery_state'],'sent');self.assertIsNotNone(resumed['turn_id'])
 
 
 if __name__=='__main__':unittest.main()

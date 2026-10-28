@@ -13,7 +13,7 @@ Qualified on Windows on 28 October 2026 with Codex CLI 0.164.0-alpha.11.1 and ex
 
 ## Qualification performed
 
-The automated suite has **170 passing tests**. It includes the mixed-version migration/handoff fences, grant preservation, native-writer envelopes, persistent Git input isolation, loaded-scope refresh, and uncertain-lifecycle recovery.
+The automated suite has **172 passing tests**. It includes the mixed-version migration/handoff fences, grant preservation, native-writer envelopes, persistent Git input isolation, loaded-scope refresh, and uncertain-lifecycle recovery. Independent review also reproduced a concurrent stale operator update and a local Git timeout after the dispatch marker. Their regressions now require a transactional grant snapshot check and local policy validation before remote dispatch, preserving intervening revocations/UI changes and proving the timeout was undispatched.
 
 A private two-project test used real MCP processes, native persistent Codex conversations and model turns. Both developers delivered tested local commits. An independent auditor rejected a deliberately introduced fixture defect; the original developer corrected it and the auditor accepted the new revision. The second project passed its own independent audit. Same-owner policy refresh, cross-project refusal, exact completed-key deduplication after owner restart, and terminal task acceptance were observed. All fixture workers/coordinators were archived while retaining their histories.
 

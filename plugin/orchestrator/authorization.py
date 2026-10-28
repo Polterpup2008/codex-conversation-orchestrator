@@ -12,7 +12,7 @@ from .projects import canonical, contained, path_key
 
 
 def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
-                  desktop_project_id=None, headless=False, integrations=(), appointment=None):
+                  desktop_project_id=None, headless=False, integrations=(), appointment=None,expected_state=None):
     from .service import identifier
     identifier(coordinator)
     if ':' in project_id:raise BridgeError('INVALID_PROJECT_ID','Project IDs cannot contain the reserved colon separator.')
@@ -23,6 +23,12 @@ def grant_project(registry, project_id, root, coordinator, desktop_ui_id=None,
     if not headless and not desktop_ui_id:
         raise BridgeError('DESKTOP_PROJECT_REQUIRED', 'Supply the native desktop project ID, or explicitly select headless mode.')
     with registry.transaction() as db:
+        if expected_state is not None:
+            authorization=db.execute('SELECT * FROM authorizations WHERE project_id=?',(project_id,)).fetchone()
+            project=db.execute('SELECT * FROM projects WHERE id=?',(project_id,)).fetchone()
+            current={'authorization':dict(authorization) if authorization else None,'project':dict(project) if project else None}
+            if current!=expected_state:
+                raise BridgeError('GRANT_CHANGED','The grant or project changed while options were being preserved. Reread the current settings before retrying this operator update.')
         from .artifacts import reserved_artifact_overlap
         if reserved_artifact_overlap(db,root):raise BridgeError('PROJECT_OVERLAP','A source root cannot overlap a reserved artifact directory.')
         if db.execute('SELECT 1 FROM control_lock').fetchone():

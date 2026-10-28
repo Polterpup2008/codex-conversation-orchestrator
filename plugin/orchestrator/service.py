@@ -569,14 +569,17 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             if state.get('type') == 'active':
                 raise BridgeError('CONVERSATION_BUSY', 'Codex reports an already active turn; refusing to steer it.')
             marker = f'[orchestrator-message:{message_key}]'
-            self.registry.mark_dispatching(message_key,self.instance)
-            dispatched = True
-            turn = self.rpc.call('turn/start', {'threadId': thread_id,
+            # Finish local/path/Git policy validation before the durable remote
+            # dispatch boundary. A local timeout proves no turn was attempted.
+            turn_params={'threadId': thread_id,
                 'model':route['model'],'effort':route['effort'],
                 'disabledPluginIds':getattr(self.rpc,'disabled_plugin_ids',[]),
                 'sandboxPolicy':self._worker_sandbox(worker,self._project(worker['project_id'])),
                 'clientUserMessageId': str(uuid.uuid5(uuid.NAMESPACE_URL, message_key)),
-                'input': [{'type': 'text', 'text': f'{marker}\nAssigned registry role: {worker["role"]}\n{message}'}]})['turn']
+                'input': [{'type': 'text', 'text': f'{marker}\nAssigned registry role: {worker["role"]}\n{message}'}]}
+            self.registry.mark_dispatching(message_key,self.instance)
+            dispatched = True
+            turn = self.rpc.call('turn/start',turn_params)['turn']
             # Acknowledgment can precede turn/started, and persisted history can
             # temporarily label the not-yet-started turn interrupted. Own it immediately.
             with self.rpc.guard:

@@ -39,7 +39,7 @@ class ArtifactTransport(RecordedTransport):
 class ArtifactRootTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.base=pathlib.Path(self.temp.name);self.state=self.base/'state'
+        self.base=pathlib.Path(self.temp.name).resolve();self.state=self.base/'state'
         self.roots={x:self.base/x for x in ('alpha','beta')}
         self.coordinators={x:str(uuid.uuid4()) for x in self.roots};self.meta={}
         for name,root in self.roots.items():

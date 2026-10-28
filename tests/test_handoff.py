@@ -22,7 +22,7 @@ from orchestrator.service import Service
 class ProjectBridgeHandoffTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.base=pathlib.Path(self.temp.name);self.home=self.base/'profile';(self.home/'sessions').mkdir(parents=True)
+        self.base=pathlib.Path(self.temp.name).resolve();self.home=self.base/'profile';(self.home/'sessions').mkdir(parents=True)
         self.roots={name:self.base/name for name in ('alpha','beta')};self.ids={name:str(uuid.uuid4()) for name in self.roots};self.meta={}
         for name,root in self.roots.items():
             root.mkdir();path=self.home/'sessions'/(name+'.jsonl')

@@ -39,7 +39,7 @@ class RecordedTransport:
 class ProductionTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.base=pathlib.Path(self.temp.name);self.state=self.base/'state'
+        self.base=pathlib.Path(self.temp.name).resolve();self.state=self.base/'state'
         self.roots={p:self.base/p for p in ('alpha','beta')}
         self.coordinators={p:str(uuid.uuid4()) for p in self.roots}
         self.meta={}

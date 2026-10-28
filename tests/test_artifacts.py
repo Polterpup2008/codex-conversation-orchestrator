@@ -106,6 +106,65 @@ class ArtifactRootTests(unittest.TestCase):
         self.assertEqual(params['runtimeWorkspaceRoots'],[str(self.roots['alpha'])])
         self.assertEqual(result['worker']['workspace'],str(self.roots['alpha']))
 
+    def test_loopback_writer_retains_exact_artifacts_git_and_native_denylist(self):
+        self.grant();root=self.roots['alpha']
+        subprocess.run(['git','init',str(root)],check=True,capture_output=True,stdin=subprocess.DEVNULL)
+        worker=self.workers[('alpha','Developer')]
+        self.a.conversation_role(worker,'Developer',['existing-label','git-write','loopback-net'])
+        self.a.message_send(worker,'Use the assigned local fixture only','loopback-send')
+        resume=next(p for m,p in self.a.rpc.calls if m=='thread/resume')
+        turn=next(p for m,p in self.a.rpc.calls if m=='turn/start')
+        self.assertNotIn('sandbox',resume);self.assertNotIn('sandboxPolicy',turn)
+        name=resume['permissions'];self.assertEqual(turn['permissions'],name)
+        self.assertIn(self.a.instance,name)
+        config=resume['config'];self.assertNotIn('sandbox_workspace_write',config)
+        self.assertEqual(config['default_permissions'],name)
+        profile=config['permissions'][name]
+        self.assertEqual(profile['extends'],':workspace')
+        self.assertEqual(profile['workspace_roots'],{str(self.external):True})
+        self.assertEqual(profile['filesystem'],{':tmpdir':'read',':slash_tmp':'read',str(root/'.git'):'write'})
+        self.assertEqual(profile['network']['domains'],{'127.0.0.1':'allow','localhost':'allow'})
+        self.assertTrue(profile['network']['allow_local_binding'])
+        self.assertFalse(profile['network']['allow_upstream_proxy'])
+        self.assertEqual(profile['network']['proxy_url'],'http://127.0.0.1:0')
+        self.assertIn('not per-port isolation',resume['developerInstructions'])
+        self.assertEqual(self.worker()['capabilities'],json.dumps(['existing-label','git-write','loopback-net']))
+
+    def test_loopback_auditor_stays_readonly_even_with_git_capability(self):
+        self.grant()
+        self.a.conversation_create('alpha','Local service auditor','Auditor','loopback-auditor',capabilities=['loopback-net','git-write'])
+        params=next(p for m,p in self.a.rpc.calls if m=='thread/start')
+        self.assertNotIn('sandbox',params)
+        profile=params['config']['permissions'][params['permissions']]
+        self.assertEqual(profile['extends'],':read-only')
+        self.assertNotIn('workspace_roots',profile)
+        self.assertFalse(any(value=='write' for value in profile['filesystem'].values()))
+        self.assertEqual(profile['network']['domains'],{'127.0.0.1':'allow','localhost':'allow'})
+
+    def test_loopback_capability_is_exact_and_does_not_change_other_workers(self):
+        worker=self.workers[('alpha','Developer')]
+        self.a.conversation_role(worker,'Developer',['loopback-net:http://other','network','git'])
+        self.a.message_send(worker,'No assigned network capability','no-loopback')
+        turn=next(p for m,p in self.a.rpc.calls if m=='turn/start')
+        self.assertFalse(turn['sandboxPolicy']['networkAccess']);self.assertNotIn('permissions',turn)
+        other=self.worker('beta')
+        self.assertIsNone(self.b._worker_permissions(other,self.b._project('beta'),{}))
+
+    def test_removing_loopback_refreshes_only_owned_idle_worker(self):
+        worker=self.workers[('alpha','Developer')]
+        self.a.conversation_role(worker,'Developer',['loopback-net'])
+        self.a.conversation_resume(worker);rpc=self.a.rpc
+        other=self.workers[('alpha','Auditor')];rpc.active.add((other,'independent-live'))
+        self.a.conversation_role(worker,'Developer',[])
+        self.a.message_send(worker,'Continue offline','loopback-removed')
+        self.assertIn((other,'independent-live'),rpc.active);self.assertFalse(rpc.closed)
+        resumes=[p for m,p in rpc.calls if m=='thread/resume']
+        self.assertIn('permissions',resumes[0]);self.assertNotIn('permissions',resumes[-1])
+        self.assertFalse(resumes[-1]['config']['sandbox_workspace_write']['network_access'])
+        turn=next(p for m,p in rpc.calls if m=='turn/start')
+        self.assertFalse(turn['sandboxPolicy']['networkAccess'])
+        self.assertEqual([p['threadId'] for m,p in rpc.calls if m=='thread/unsubscribe'],[worker])
+
     def test_idle_loaded_worker_refreshes_instructions_after_root_change(self):
         worker=self.workers[('alpha','Developer')]
         self.a.conversation_resume(worker)

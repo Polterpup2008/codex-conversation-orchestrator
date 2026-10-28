@@ -6,7 +6,7 @@ import os
 import sys
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parent))
 from orchestrator.errors import BridgeError
-from orchestrator.handoff import project_bridge_register,project_bridge_prepare,preflight_project_bridge
+from orchestrator.handoff import project_bridge_register,project_bridge_prepare,preflight_project_bridge,retry_short_control
 from orchestrator.service import Service
 from orchestrator.tools import validate,KEY
 import server
@@ -21,12 +21,12 @@ def main():
     parser.add_argument('--data-dir',type=pathlib.Path)
     args=parser.parse_args();validate(args.project,KEY)
     data=args.data_dir or pathlib.Path(os.environ.get('ORCHESTRATOR_DATA_DIR') or pathlib.Path(os.environ.get('CODEX_HOME',pathlib.Path.home()/'.codex'))/'conversation-orchestrator')
-    preflight_project_bridge(data,args.project,args.handoff,args.prepare_handoff)
+    retry_short_control(lambda:preflight_project_bridge(data,args.project,args.handoff,args.prepare_handoff))
     service=Service(data)
     try:
         if args.prepare_handoff:
-            print(json.dumps(project_bridge_prepare(service,args.project)));return
-        project_bridge_register(service,args.project,args.handoff)
+            print(json.dumps(retry_short_control(lambda:project_bridge_prepare(service,args.project))));return
+        retry_short_control(lambda:project_bridge_register(service,args.project,args.handoff))
         server.main(service)
     finally:service.close()
 

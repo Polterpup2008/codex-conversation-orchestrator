@@ -1,2 +1,2 @@
 """Persistent Codex conversation orchestration, using only official App Server RPC."""
-__version__ = '0.6.1'
+__version__ = '0.6.2'

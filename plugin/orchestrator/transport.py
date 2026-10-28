@@ -112,6 +112,7 @@ class AppServer:
         self.strict_windows_sandbox = os.name=='nt' if strict_windows_sandbox is None else bool(strict_windows_sandbox)
         if self.strict_windows_sandbox:command += ['-c','windows.sandbox="mxc"']
         command += ['-c','features.hooks=false','-c','features.multi_agent=false','-c','features.apps=false',
+                    '-c','features.network_proxy=true',
                     '-c','features.remote_plugin='+('true' if self.inventory_only else 'false')]
         home = pathlib.Path(os.environ.get('CODEX_HOME', pathlib.Path.home()/'.codex'))
         config_files=[home/'config.toml']

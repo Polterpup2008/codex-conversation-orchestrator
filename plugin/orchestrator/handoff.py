@@ -78,10 +78,22 @@ def recent_release_proof(thread,after,release,codex_home=None,now=None):
 
 
 def _idle(db,project_id):
-    if db.execute('SELECT 1 FROM control_lock').fetchone() or db.execute('SELECT 1 FROM operations o JOIN conversations c ON c.thread_id=o.thread_id WHERE c.project_id=?',(project_id,)).fetchone() or db.execute("SELECT 1 FROM creations WHERE state='preparing' AND (project_id=? OR project_id IS NULL)",(project_id,)).fetchone():
+    if db.execute('SELECT 1 FROM control_lock').fetchone():
+        raise BridgeError('PROJECT_BUSY','Another short control operation is in progress; retry the same handoff.',{'retryable_control_busy':True})
+    if db.execute('SELECT 1 FROM operations o JOIN conversations c ON c.thread_id=o.thread_id WHERE c.project_id=?',(project_id,)).fetchone() or db.execute("SELECT 1 FROM creations WHERE state='preparing' AND (project_id=? OR project_id IS NULL)",(project_id,)).fetchone():
         raise BridgeError('PROJECT_BUSY','Resolve control and lifecycle operations before handing off this project.')
     if db.execute("SELECT 1 FROM messages m JOIN conversations c ON c.thread_id=m.thread_id WHERE c.project_id=? AND m.state IN ('preparing','sent','unknown')",(project_id,)).fetchone():
         raise BridgeError('PROJECT_BUSY','All this project sends must be terminal before handoff.')
+
+
+def retry_short_control(action,seconds=30):
+    """Retry only a proven pre-transfer control collision, never remote mutations."""
+    deadline=time.monotonic()+seconds
+    while True:
+        try:return action()
+        except BridgeError as error:
+            if error.code!='PROJECT_BUSY' or not (error.details or {}).get('retryable_control_busy') or time.monotonic()>=deadline:raise
+            time.sleep(.25)
 
 
 def _handoff_release(db,project_id,grant):
@@ -137,6 +149,12 @@ def project_bridge_register(service,project_id,handoff=False):
     if handoff:
         with service.registry.connect() as db:intent,release=_handoff_release(db,project_id,grant)
         proof=recent_release_proof(thread,max(grant['created'],intent['prepared']),release)
+        # Metadata verification is finished. Close this helper's transport
+        # before committing ownership; no fallible RPC/second control gate may
+        # strand an already transferred lease during another project's call.
+        if service._transport:
+            service._transport.close();service._transport=None
+            service.loaded.clear();service.loaded_artifacts.clear()
         with service.registry.transaction() as db:
             current=db.execute('SELECT * FROM authorizations WHERE project_id=? AND enabled=1',(project_id,)).fetchone()
             if not current or current['coordinator_thread_id']!=caller or current['created']!=grant['created']:
@@ -145,6 +163,9 @@ def project_bridge_register(service,project_id,handoff=False):
             current_intent,current_release=_handoff_release(db,project_id,current)
             if current_intent!=intent or current_release!=release:
                 raise BridgeError('BRIDGE_RELEASE_REQUIRED','The old bridge was used again while checking release. Release it again, then retry handoff.')
+            coordinator=db.execute('SELECT project_id,role FROM conversations WHERE thread_id=?',(caller,)).fetchone()
+            if not coordinator or coordinator['project_id']!=project_id or coordinator['role'].lower()!='coordinator':
+                raise BridgeError('COORDINATOR_CONFLICT','The original coordinator identity changed before transfer.')
             # Legacy release deletes its control lock even on failure. Its
             # transcript cannot attest another connection's process teardown.
             # While the same write transaction excludes all writer controls,
@@ -159,6 +180,14 @@ def project_bridge_register(service,project_id,handoff=False):
             db.execute('UPDATE coordinator_leases SET owner_token=? WHERE project_id=?',(service.instance,project_id))
             db.execute('DELETE FROM bridge_handoffs WHERE project_id=?',(project_id,))
             db.execute("INSERT INTO notes(project_id,kind,text,created) VALUES(?,'decision',?,?)",(project_id,json.dumps({'same_chat_bridge_handoff':proof,'previous_epoch':current['created'],'previous_bridge':release['token'],'new_bridge':service.instance}),epoch))
+            policy=dict(current);policy['created']=epoch
+        # The transaction already verified the native identity, exact grant,
+        # role and new lease. Binding local memory requires no second global
+        # control acquisition or remote operation after the durable transfer.
+        service.project_scope=project_id;service.coordinator_identity=caller;service.project_policy=policy
+        return {'project':service.registry.one('projects','id',project_id),'coordinator_thread_id':caller,
+                'connection_scope':project_id,'authorization':'same_chat_handoff',
+                'desktop_mode':'headless' if policy['headless'] else 'native_attachment_required'}
     return service.coordinator_register(project_id,caller)
 
 

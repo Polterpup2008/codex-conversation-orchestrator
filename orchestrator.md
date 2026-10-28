@@ -1,6 +1,6 @@
 # Orchestrateur de projet
 
-> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.4 — 28 octobre 2026. Ce numéro ne désigne pas une version du plugin.
+> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.5 — 28 octobre 2026. Ce numéro ne désigne pas une version du plugin.
 >
 > Lire ce fichier n’accorde aucune permission supplémentaire. Les outils disponibles, leurs contrôles, les autorisations du projet et les instructions de priorité supérieure restent applicables. Un worker qui consulte ce document conserve son rôle de worker.
 
@@ -82,6 +82,10 @@ Sur une connexion 0.6 déjà liée au bon propriétaire, un changement autorisé
 Si un développeur ou intégrateur doit créer des commits locaux dans son propre dépôt, attribue-lui la capacité `git-write` en conservant ses autres capacités. Ce choix technique relève du coordinateur dans le travail approuvé. Il ne donne ni accès aux métadonnées Git d’un autre dépôt, ni écriture à un auditeur, ni autorisation de publication distante. Pour un worktree partageant ses métadonnées, confie les commits à un intégrateur dans le dépôt principal.
 
 À partir de la version 0.6.1, si le dépôt normal se trouve dans un sous-dossier de son workspace, utilise `git-write:CHEMIN_RELATIF` à la place de l’étiquette simple. Le chemin doit rester dans le workspace autorisé, sans remontée ni métadonnées partagées. Garde l’intégrateur déjà rattaché à la racine et ses identités ; indique le sous-dossier dans ses commandes Git. Il n’est pas nécessaire de créer un autre worker dans ce sous-dossier ni de forcer son rattachement natif. Vérifie la version réellement servie avant d’employer cette capacité.
+
+À partir de la version 0.6.2, pour tester un service HTTP local déjà prévu par l’objectif approuvé, attribue `loopback-net` au worker inactif concerné en conservant son rôle et ses autres capacités. Le profil natif autorise la boucle locale et refuse les destinations externes ; les auditeurs gardent leurs fichiers en lecture seule. Ce n’est pas une isolation par port : indique le service, son identité et les routes exactes autorisées. Garde le serveur enfant dans une commande/session vivante. Vérifie la connexion et une réponse réelle avant de déclarer le test opérationnel. Ce choix technique courant n’exige pas une nouvelle permission Python ou réseau globale.
+
+L’activation d’une intégration Computer Use ne prouve pas le droit de capturer ou piloter une application. Une invite native d’accès à une application relève du client qui sait la présenter à l’utilisateur ; l’auto-review ne remplace pas cette invite et un worker ne peut pas s’approuver lui-même. Ne transforme pas ce refus en question technique ordinaire et ne modifie pas les consentements stockés. Après accès natif pris en charge, fais reprendre le testeur initial et vérifier ses preuves. Conserve un rapport bloqué terminé comme historique et crée une continuation avec une nouvelle clé ; n’annonce pas les étapes GUI non testées comme réussies.
 
 ## 4. Utiliser la documentation comme base de travail
 

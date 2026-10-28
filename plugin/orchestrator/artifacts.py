@@ -111,6 +111,43 @@ def operator_artifact_change(registry,data_dir,project_id,root,reason,create=Fal
 
 
 class ArtifactOperations:
+    def _loopback_enabled(self,worker):
+        capabilities=worker.get('capabilities') or []
+        if isinstance(capabilities,str):capabilities=json.loads(capabilities)
+        return 'loopback-net' in capabilities
+
+    def _worker_permissions(self,worker,project,config=None):
+        """Use a named, proxied native profile only for an assigned localhost task."""
+        if not self._loopback_enabled(worker):return None
+        readonly=any(r in worker['role'].lower() for r in ('audit','architect','review'))
+        # Avoid merging an identically named user/project profile that could
+        # contain additional domain or filesystem rules.
+        name='orchestrator-loopback-'+self.instance
+        if config is not None:
+            profile={'extends':':read-only' if readonly else ':workspace',
+                     'filesystem':{':tmpdir':'read',':slash_tmp':'read'},
+                     'network':{'enabled':True,'allow_local_binding':True,
+                        'proxy_url':'http://127.0.0.1:0','socks_url':'http://127.0.0.1:0',
+                        'allow_upstream_proxy':False,
+                        'domains':{'127.0.0.1':'allow','localhost':'allow'}}}
+            if not readonly:
+                profile['workspace_roots']={path:True for path in self._artifact_roots(project)}
+                profile['filesystem'].update({path:'write' for path in self._git_write_roots(worker,project)})
+            # The native workspace-requirements loader needs an explicit
+            # default with the per-thread profile; permissions alone can
+            # acknowledge thread/start then fail before the model runs.
+            config.pop('sandbox_workspace_write',None)
+            config.update(default_permissions=name,permissions={name:profile})
+        return name
+
+    def _network_instructions(self,worker):
+        if not self._loopback_enabled(worker):return ''
+        return ('\nThe coordinator assigned loopback-net for this task. Shell networking is limited to host loopback; '
+                'the native proxy allows localhost and 127.0.0.1 and denies external hosts. '
+                'This is not per-port isolation: use only the exact service and routes assigned by your coordinator. '
+                'Preserve read-only role constraints and do not mutate another service or use localhost as a relay to external destinations. '
+                'Keep any owned server child in a live foreground command/session; MXC stops remaining children when that command exits.')
+
     def _artifact_roots(self,project):
         roots=[]
         for row in self.registry.rows('SELECT * FROM artifact_roots WHERE project_id=? AND enabled=1',(project['id'],)):

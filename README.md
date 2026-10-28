@@ -31,6 +31,8 @@ The [0.6 stability report](docs/STABILITY_VALIDATION.md) records the native two-
 
 Version 0.6.1 repairs a reproduced marketplace-inventory timeout using the native installed-only metadata API. Read the [repair and same-key recovery procedure](docs/INVENTORY_VALIDATION.md), including the observed native read-only Git limitation.
 
+Version 0.6.2 repairs a cross-project race during same-chat bridge handoff and adds the explicit `loopback-net` worker capability for local HTTP tests. See [stabilization and native consent limits](docs/STABILIZATION.md).
+
 Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscription sign-in for workers. Git is needed to clone and use worktrees. No third-party Python packages or API keys are required.
 
 Version 0.6 Windows worker execution requires native MXC support and fails closed without it. The transport selects MXC only for its own process; saved Windows settings and other active bridges remain unchanged. Read the [Windows requirement and project-only handoff](docs/ARTIFACT_ROOTS.md).
@@ -74,7 +76,7 @@ Acknowledgment, turn completion, delivered code, audit verdict, acceptance and i
 
 Native saved-project IDs can differ from App Server IDs. Native-linked workers remain pending until the hosting desktop tools attach them and the coordinator observes grouping. The standalone server cannot invoke host tools or authenticate UI observations. Headless use requires a deliberate operator grant.
 
-Worker shell write policies are scoped; auditor/reviewer/architect roles are read-only. Worker network access, hooks, apps and subagents are disabled. Permitted MCP services have their own authority. Same-OS-user processes and the operator remain trusted; these controls are not a confidential multi-tenant container. See [SECURITY.md](docs/SECURITY.md).
+Worker shell write policies are scoped; auditor/reviewer/architect roles are read-only. Shell networking is disabled unless the coordinator assigns `loopback-net` for an approved local-service task; that profile allows host loopback and denies external destinations. Hooks, apps and subagents remain disabled. Permitted MCP services have their own authority and native application consent. Same-OS-user processes and the operator remain trusted; these controls are not a confidential multi-tenant container. See [SECURITY.md](docs/SECURITY.md).
 
 ## Development
 

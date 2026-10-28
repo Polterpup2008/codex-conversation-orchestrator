@@ -1,4 +1,5 @@
 import datetime
+import contextlib
 import json
 import os
 import pathlib
@@ -15,11 +16,27 @@ from unittest.mock import patch
 from test_artifacts import ArtifactTransport
 from orchestrator.authorization import grant_project
 from orchestrator.errors import BridgeError
-from orchestrator.handoff import project_bridge_register,project_bridge_prepare,recent_release_proof,preflight_project_bridge,RELEASE_COMMAND
+from orchestrator.handoff import project_bridge_register,project_bridge_prepare,recent_release_proof,preflight_project_bridge,retry_short_control,RELEASE_COMMAND
 from orchestrator.service import Service
 
 
 class ProjectBridgeHandoffTests(unittest.TestCase):
+    def test_short_control_retry_never_retries_project_execution_or_unknown_failure(self):
+        for error in (BridgeError('PROJECT_BUSY','Pending project send'),BridgeError('RPC_TIMEOUT','Unknown outcome',{'retryable_control_busy':True})):
+            with patch('orchestrator.handoff.time.sleep') as sleep:
+                action=unittest.mock.Mock(side_effect=error)
+                with self.assertRaises(BridgeError):retry_short_control(action)
+                self.assertEqual(action.call_count,1);sleep.assert_not_called()
+
+    def test_short_control_retry_is_bounded_and_returns_same_action_result(self):
+        busy=BridgeError('PROJECT_BUSY','Short control',{'retryable_control_busy':True})
+        action=unittest.mock.Mock(side_effect=[busy,{'ready':True}])
+        with patch('orchestrator.handoff.time.sleep') as sleep:
+            self.assertEqual(retry_short_control(action),{'ready':True});self.assertEqual(action.call_count,2);sleep.assert_called_once_with(.25)
+        with patch('orchestrator.handoff.time.monotonic',side_effect=[0,31]),patch('orchestrator.handoff.time.sleep') as sleep:
+            with self.assertRaises(BridgeError):retry_short_control(unittest.mock.Mock(side_effect=busy))
+            sleep.assert_not_called()
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.base=pathlib.Path(self.temp.name).resolve();self.home=self.base/'profile';(self.home/'sessions').mkdir(parents=True)
@@ -80,6 +97,32 @@ class ProjectBridgeHandoffTests(unittest.TestCase):
         self.assertEqual(self.other.project_status('beta')['projects'][0]['root'],str(self.roots['beta']))
         replay=Service(self.base/'state',transport_factory=self.factory);self.addCleanup(replay.close)
         with self.assertRaisesRegex(BridgeError,'prepare-handoff'):project_bridge_register(replay,'alpha',handoff=True)
+
+    def test_foreign_control_after_transfer_cannot_strand_helper_registration(self):
+        original=self.new.registry.transaction;entered=threading.Event();release=threading.Event();started=[];errors=[]
+        def competitor():
+            try:
+                with self.other._control_operation('project_note'):
+                    entered.set();release.wait(5)
+            except Exception as error:errors.append(error);entered.set()
+        @contextlib.contextmanager
+        def transaction():
+            with original() as db:yield db
+            lease=self.new.registry.rows("SELECT owner_token FROM coordinator_leases WHERE project_id='alpha'")[0]
+            if lease['owner_token']==self.new.instance and not started:
+                thread=threading.Thread(target=competitor);started.append(thread);thread.start()
+                self.assertTrue(entered.wait(5));self.assertFalse(errors)
+        try:
+            with patch.object(self.new.registry,'transaction',transaction):
+                result=project_bridge_register(self.new,'alpha',handoff=True)
+            self.assertEqual(result['connection_scope'],'alpha');self.assertEqual(self.new.project_scope,'alpha')
+            self.assertEqual(self.new.project_policy['created'],self.new.registry.one('authorizations','project_id','alpha')['created'])
+            self.assertEqual(self.new.project_status('alpha')['projects'][0]['id'],'alpha')
+            self.assertTrue(self.new.registry.rows('SELECT * FROM control_lock'))
+        finally:
+            release.set()
+            for thread in started:thread.join(5)
+        self.assertFalse(errors)
 
     def test_pending_send_blocks_handoff_without_fencing(self):
         with self.old.registry.connect() as db:

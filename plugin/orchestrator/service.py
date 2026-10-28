@@ -58,6 +58,8 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 'external_artifact_roots_supported':True,
                 'existing_policy_refresh':'coordinator_register with original IDs after project sends resolve; no app restart or second nomination',
                 'git_write_capability':{'name':'git-write','nested_repository':'git-write:RELATIVE_PATH','assignment':'conversation_create or conversation_role capabilities','scope':'normal repository own .git directory only, inside this worker workspace; read-only roles never gain writes; shared worktree metadata is excluded'},
+                'loopback_network_capability':{'name':'loopback-net','assignment':'conversation_create or conversation_role capabilities, preserving other labels, at an idle worker boundary','scope':'native proxied localhost/127.0.0.1; host loopback is not per-port isolation; external networking denied; read-only roles keep read-only files'},
+                'computer_use_approval':'Enabling the integration does not approve a native application. This unattended connection refuses interactive requests; native Computer Use app prompts require the supported human-facing client and are not replaced by auto-review or ordinary question_reply.',
                 'writer_conflict_recovery':'WRITER_CONFLICT preserves the original identity and refuses pre-dispatch resume; reconcile pending work, then reuse another suitable project worker or create a successor with explicit handoff.',
                 'windows_worker_backend':'mxc_required_no_legacy_fallback' if os.name=='nt' else 'platform_sandbox',
                 'artifact_operator':{'command':[sys.executable,'-I','-B','-S',str(root/'artifact.py')],
@@ -377,6 +379,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         write_roots=[cwd,*artifact_roots,*git_roots]
         worker_config.update({'model_reasoning_effort':route['effort'],'sandbox_workspace_write':{'network_access':False,'writable_roots':write_roots,'exclude_tmpdir_env_var':True,'exclude_slash_tmp':True}})
         if any(r in role.lower() for r in ('audit','architect','review')):worker_config['sandbox_workspace_write']['writable_roots']=[]
+        permission=self._worker_permissions(candidate_worker,project,worker_config)
         params={
             'cwd': cwd, 'ephemeral': False, 'approvalPolicy': 'never',
             'sandbox': 'read-only' if any(r in role.lower() for r in ('audit','architect','review')) else 'workspace-write', 'modelProvider': 'openai',
@@ -385,6 +388,9 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             'developerInstructions':self._role_instructions(role,project['root'],cwd,inherited_instructions,artifact_roots)}
         if git_roots:params['developerInstructions']+='\nThe coordinator assigned git-write for local Git index/commit operations in this repository only. The explicit metadata root is '+git_roots[0]+'. Existing audit and integration requirements still apply; this capability grants no remote publication permission.'
         params['dynamicTools']=[QUESTION_TOOL]
+        if permission:
+            params.pop('sandbox');params['permissions']=permission
+            params['developerInstructions']+=self._network_instructions(candidate_worker)
         if desktop_id and not project.get('desktop_ui_project_id'):
             params['projectId']=desktop_id
         params['runtimeWorkspaceRoots']=[cwd]
@@ -468,7 +474,9 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 git_roots=self._git_write_roots(worker,project)
                 worker_config['sandbox_workspace_write']={'network_access':False,'writable_roots':[cwd,*artifact_roots,*git_roots],'exclude_tmpdir_env_var':True,'exclude_slash_tmp':True}
                 if any(r in worker['role'].lower() for r in ('audit','architect','review')):worker_config['sandbox_workspace_write']['writable_roots']=[]
+                permission=self._worker_permissions(worker,project,worker_config)
                 instructions=self._role_instructions(worker['role'],project['root'],cwd,inherited,artifact_roots)
+                instructions+=self._network_instructions(worker)
                 if git_roots:instructions+='\nThe coordinator assigned git-write for local Git index/commit operations in this repository only. The explicit metadata root is '+git_roots[0]+'. Existing audit and integration requirements still apply; this capability grants no remote publication permission.'
                 refresh=thread_id in self.loaded
                 if refresh:
@@ -486,10 +494,12 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                     # worker, leaving other running workers on the bridge.
                     rpc.call('thread/unsubscribe',{'threadId':thread_id})
                     self.loaded.discard(thread_id);self.loaded_artifacts.pop(thread_id,None)
-                result = rpc.call('thread/resume', {'threadId': thread_id, 'excludeTurns': True,
+                resume_params={'threadId': thread_id, 'excludeTurns': True,
                     'cwd':cwd, 'approvalPolicy': 'never',
                     'developerInstructions':instructions,
-                    'sandbox': 'read-only' if any(r in worker['role'].lower() for r in ('audit','architect','review')) else 'workspace-write', 'modelProvider': 'openai','config':worker_config})
+                    'sandbox': 'read-only' if any(r in worker['role'].lower() for r in ('audit','architect','review')) else 'workspace-write', 'modelProvider': 'openai','config':worker_config}
+                if permission:resume_params.pop('sandbox');resume_params['permissions']=permission
+                result = rpc.call('thread/resume',resume_params)
                 self.loaded.add(thread_id)
                 if result['thread'].get('status',{}).get('type')=='active':
                     self.loaded_artifacts[thread_id]=None
@@ -505,7 +515,8 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 # text/project-file content into developer authority.
                 scope={'project_id':project['id'],'role':worker['role'],'source_root':project['root'],'workspace':cwd,
                        'external_artifact_directories':artifact_roots,'git_metadata_write_roots':git_roots,
-                       'read_only':any(r in worker['role'].lower() for r in ('audit','architect','review')),'network_access':False}
+                       'read_only':any(r in worker['role'].lower() for r in ('audit','architect','review')),
+                       'network_access':bool(permission),'network_scope':'host_loopback_only' if permission else 'disabled'}
                 scope_text=('Current orchestrator registry scope. This supersedes only earlier orchestrator-generated role/scope summaries for this same worker; it does not appoint a coordinator or override system, host or sandbox policy. '
                             'Read-only roles remain read-only for source and external artifacts. The registered external directories below may be inspected for this project; no new human grant is needed to confirm this existing scope. '
                             'Use the current assigned task and independent-audit requirements.\n'+json.dumps(scope,sort_keys=True))
@@ -577,6 +588,8 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 'sandboxPolicy':self._worker_sandbox(worker,self._project(worker['project_id'])),
                 'clientUserMessageId': str(uuid.uuid5(uuid.NAMESPACE_URL, message_key)),
                 'input': [{'type': 'text', 'text': f'{marker}\nAssigned registry role: {worker["role"]}\n{message}'}]}
+            permission=self._worker_permissions(worker,self._project(worker['project_id']))
+            if permission:turn_params.pop('sandboxPolicy');turn_params['permissions']=permission
             self.registry.mark_dispatching(message_key,self.instance)
             dispatched = True
             turn = self.rpc.call('turn/start',turn_params)['turn']

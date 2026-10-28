@@ -38,24 +38,39 @@ def integration_policy(config,allow_integrations=()):
     return policy
 
 
-def installed_plugin_inventory(executable,home):
+def installed_plugin_inventory(executable,home,data_dir=None,workspace=None):
     """Include default-enabled plugins absent from config.toml in the deny list."""
     try:
-        result=subprocess.run([executable,'plugin','list','--json'],stdin=subprocess.DEVNULL,
-            capture_output=True,text=True,encoding='utf-8',timeout=15,
-            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),check=True)
-        installed=json.loads(result.stdout)['installed']
-        if not isinstance(installed,list):raise ValueError('Invalid plugin inventory')
-        names=[entry['pluginId'] for entry in installed]
+        # CLI plugin/list also fetches marketplace catalogues and can time out
+        # before any send reservation. The installed-only native RPC supplies
+        # locally materialized inventory without listing available plugins.
+        metadata=AppServer(data_dir or home/'conversation-orchestrator/logs',executable=executable,
+                           workspace=workspace,inventory_only=True)
+        try:result=metadata.call('plugin/installed',{'cwds':[str(workspace)] if workspace else []},timeout=15)
+        finally:metadata.close()
+        if not isinstance(result,dict):raise ValueError('Invalid installed response')
+        errors=result.get('marketplaceLoadErrors',[])
+        if not isinstance(errors,list) or errors:raise ValueError('Installed marketplace metadata unavailable')
+        marketplaces=result.get('marketplaces')
+        if not isinstance(marketplaces,list):raise ValueError('Invalid marketplace list')
+        installed=[]
+        for marketplace in marketplaces:
+            if not isinstance(marketplace,dict) or not isinstance(marketplace.get('plugins'),list):raise ValueError('Invalid marketplace plugin list')
+            for entry in marketplace['plugins']:
+                if not isinstance(entry,dict):raise ValueError('Invalid installed plugin entry')
+                if not isinstance(entry.get('installed'),bool):raise ValueError('Invalid installed status')
+                if entry['installed']:installed.append(entry)
+        names=[entry['id'] for entry in installed]
         if not all(isinstance(name,str) and name for name in names):raise ValueError('Invalid plugin IDs')
+        if len(set(names))!=len(names):raise ValueError('Duplicate installed plugin IDs')
         inventory={}
         for entry in installed:
-            name=entry['pluginId'];plugin,marketplace=name.rsplit('@',1)
-            if any(part in ('','.','..') or '/' in part or '\\' in part for part in (plugin,marketplace,entry['version'])):raise ValueError('Invalid plugin cache identity')
-            root=home/'plugins/cache'/marketplace/plugin/entry['version']
+            name=entry['id'];plugin,marketplace=name.rsplit('@',1);version=entry.get('localVersion') or entry.get('version')
+            if any(not isinstance(part,str) or part in ('','.','..') or '/' in part or '\\' in part for part in (plugin,marketplace,version)):raise ValueError('Invalid plugin cache identity')
+            root=home/'plugins/cache'/marketplace/plugin/version
             if not root.is_dir():
                 source=entry.get('source',{})
-                root=pathlib.Path(source['path']) if source.get('source')=='local' else root
+                root=pathlib.Path(source['path']) if source.get('type')=='local' else root
             if not root.is_dir():raise ValueError('Installed plugin cache unavailable')
             servers={}
             # Native remote plugins may start their embedded MCP even with the
@@ -64,21 +79,26 @@ def installed_plugin_inventory(executable,home):
                 path=root/filename
                 if not path.is_file():continue
                 manifest=json.loads(path.read_text(encoding='utf-8-sig'))
-                for server in manifest.get('mcpServers',{}):servers[server]={}
+                if not isinstance(manifest,dict) or not isinstance(manifest.get('mcpServers'),dict):raise ValueError('Invalid embedded server manifest')
+                for server,config in manifest['mcpServers'].items():
+                    if not isinstance(server,str) or not server or not isinstance(config,dict):raise ValueError('Invalid embedded server entry')
+                    servers[server]={}
             inventory[name]={'mcp_servers':servers} if servers else {}
         return inventory
-    except (OSError,subprocess.SubprocessError,ValueError,KeyError,TypeError) as error:
-        raise BridgeError('INTEGRATION_INVENTORY_UNAVAILABLE','Cannot verify installed plugins; refusing to inherit unknown integrations.') from error
+    except (BridgeError,OSError,ValueError,KeyError,TypeError) as error:
+        raise BridgeError('INTEGRATION_INVENTORY_UNAVAILABLE','Cannot verify installed plugins; refusing to inherit unknown integrations.',
+                          {'stage':'installed_metadata','cause':getattr(error,'code',type(error).__name__),'worker_turn_started':False}) from error
 
 
 class AppServer:
-    def __init__(self, data_dir, on_event=lambda *_: None, executable=None, workspace=None, allow_integrations=(),on_question=None,generation=None,strict_windows_sandbox=None):
+    def __init__(self, data_dir, on_event=lambda *_: None, executable=None, workspace=None, allow_integrations=(),on_question=None,generation=None,strict_windows_sandbox=None,inventory_only=False):
         self.pending, self.completed, self.active = {}, {}, set()
         self.guard, self.write_guard = threading.RLock(), threading.Lock()
         self.changed = threading.Condition(self.guard)
         self.counter, self.closed, self.on_event = 0, False, on_event
         self.on_question=on_question;self.input_requests={}
         self.generation=generation or str(uuid.uuid4())
+        self.inventory_only=bool(inventory_only)
         executable = executable or os.environ.get('ORCHESTRATOR_CODEX') or shutil.which('codex')
         if not executable:
             raise BridgeError('CODEX_NOT_FOUND', 'Install the official Codex CLI and sign in with ChatGPT.')
@@ -91,7 +111,8 @@ class AppServer:
         # Explicit selection fails if unsupported; never silently weaken it.
         self.strict_windows_sandbox = os.name=='nt' if strict_windows_sandbox is None else bool(strict_windows_sandbox)
         if self.strict_windows_sandbox:command += ['-c','windows.sandbox="mxc"']
-        command += ['-c','features.hooks=false','-c','features.multi_agent=false','-c','features.apps=false','-c','features.remote_plugin=false']
+        command += ['-c','features.hooks=false','-c','features.multi_agent=false','-c','features.apps=false',
+                    '-c','features.remote_plugin='+('true' if self.inventory_only else 'false')]
         home = pathlib.Path(os.environ.get('CODEX_HOME', pathlib.Path.home()/'.codex'))
         config_files=[home/'config.toml']
         if workspace:
@@ -106,10 +127,10 @@ class AppServer:
         merge_config(effective,profile)
         allowed_plugins=[name for name in allow_integrations if name.startswith('plugins.') and 'conversation-orchestrator' not in name]
         if not allowed_plugins:
-            command+=['-c','features.plugins=false']
+            command+=['-c','features.plugins='+('true' if self.inventory_only else 'false')]
             self.disabled_plugin_ids=[]
         else:
-            inventory=installed_plugin_inventory(executable,home)
+            inventory=installed_plugin_inventory(executable,home,data_dir=data_dir,workspace=workspace)
             self.disabled_plugin_ids=[name for name in inventory if 'plugins.'+name not in allowed_plugins or 'conversation-orchestrator' in name]
             for name,entry in inventory.items():merge_config(effective.setdefault('plugins',{}).setdefault(name,{}),entry)
         for section,overrides in integration_policy(effective,allow_integrations).items():
@@ -156,6 +177,8 @@ class AppServer:
                 raise BridgeError('CONNECTION_LOST', str(e)) from e
 
     def call(self, method, params, timeout=40):
+        if getattr(self,'inventory_only',False) and method not in ('initialize','account/read','plugin/installed'):
+            raise BridgeError('INVENTORY_ONLY','This metadata connection cannot start workers, execute commands or invoke tools.')
         with self.guard:
             if self.closed:
                 raise BridgeError('CONNECTION_LOST', 'App Server connection is closed; resume/reconcile before retrying mutations.')

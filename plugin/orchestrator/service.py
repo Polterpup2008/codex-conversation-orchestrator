@@ -17,7 +17,7 @@ from .transport import AppServer,integration_policy
 from .projects import ProjectOperations,canonical,path_key,allowed_workspace,contained
 from .routing import ModelOperations
 from .authorization import AuthorizationOperations
-from .auditing import AuditOperations
+from .auditing import AuditOperations,leading_verdict
 from .questions import QuestionOperations,QUESTION_TOOL
 from .coordination import CoordinationOperations
 from .runtime import RuntimeOperations
@@ -799,8 +799,8 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             replies=[i for i in audit_turn.get('items',[]) if i.get('type')=='agentMessage']
             finals=[i for i in replies if i.get('phase')=='final_answer']
             audit_text=(finals or replies)[-1].get('text','') if replies else ''
-            actual_verdict = re.search(r'^\s*(?:\*\*)?(ACCEPT|REJECT)\b', audit_text.upper())
-            if not actual_verdict or actual_verdict.group(1) != verdict.upper():
+            actual_verdict = leading_verdict(audit_text)
+            if actual_verdict != verdict.upper():
                 raise BridgeError('VERDICT_EVIDENCE_MISMATCH', 'Requested verdict is absent from the actual auditor response.')
             self._validate_audit_link(dict(task),audit)
             state = 'accepted' if verdict == 'accept' else 'rejected'

@@ -29,6 +29,8 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 
 The [0.6 stability report](docs/STABILITY_VALIDATION.md) records the native two-project correction/audit exercise, loaded-context regression, local Git capability and integration-filter checks, with their validation limits.
 
+Version 0.6.1 repairs a reproduced marketplace-inventory timeout using the native installed-only metadata API. Read the [repair and same-key recovery procedure](docs/INVENTORY_VALIDATION.md), including the observed native read-only Git limitation.
+
 Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscription sign-in for workers. Git is needed to clone and use worktrees. No third-party Python packages or API keys are required.
 
 Version 0.6 Windows worker execution requires native MXC support and fails closed without it. The transport selects MXC only for its own process; saved Windows settings and other active bridges remain unchanged. Read the [Windows requirement and project-only handoff](docs/ARTIFACT_ROOTS.md).

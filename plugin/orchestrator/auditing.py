@@ -2,8 +2,19 @@
 import hashlib
 import json
 import pathlib
+import re
 from .errors import BridgeError
 from .projects import canonical, contained
+
+
+def leading_verdict(text):
+    """Read a current leading verdict, including an explicit French label."""
+    lines=text.lstrip().splitlines()
+    if not lines:return None
+    first=lines[0]
+    if '?' in first or len(set(re.findall(r'\b(?:ACCEPT|REJECT)\b',first.upper())))>1:return None
+    match=re.match(r'^\s*(?:\*\*)?(?:VERDICT(?:\s+(?:FINAL|CONSOLID[ÉE]))?\s*:\s*(?:\*\*)?)?(ACCEPT|REJECT)\b',first,re.IGNORECASE)
+    return match.group(1).upper() if match else None
 
 
 def artifact_hash(path):

@@ -4,10 +4,10 @@ import pathlib
 import threading
 import unittest
 import uuid
-from unittest.mock import patch
+from unittest.mock import patch,Mock
 from types import SimpleNamespace
 import test_production
-from orchestrator.auditing import artifact_hash
+from orchestrator.auditing import artifact_hash,leading_verdict
 from orchestrator.errors import BridgeError
 from orchestrator.questions import fallback_question
 from orchestrator.storage import fingerprint
@@ -21,11 +21,13 @@ class AdvancedTests(unittest.TestCase):
     def test_default_enabled_embedded_plugin_servers_are_explicitly_denied(self):
         home=self.base/'profile';root=home/'plugins/cache/catalog/extra/1.0';root.mkdir(parents=True)
         (root/'.mcp.json').write_text(json.dumps({'mcpServers':{'embedded':{'command':'private-command','env':{'SECRET':'private-value'}}}}))
-        result=SimpleNamespace(stdout=json.dumps({'installed':[{'pluginId':'extra@catalog','version':'1.0'}]}))
-        with patch('orchestrator.transport.subprocess.run',return_value=result) as run:
+        result={'marketplaces':[{'plugins':[{'installed':True,'id':'extra@catalog','localVersion':'1.0'}]}]}
+        metadata=SimpleNamespace(call=Mock(return_value=result),close=Mock())
+        with patch('orchestrator.transport.AppServer',return_value=metadata) as factory,patch('orchestrator.transport.subprocess.run',side_effect=AssertionError('CLI marketplace listing must not run')):
             inventory=installed_plugin_inventory('codex',home)
         self.assertEqual(inventory,{'extra@catalog':{'mcp_servers':{'embedded':{}}}})
-        self.assertEqual(run.call_args.kwargs['stdin'],__import__('subprocess').DEVNULL)
+        self.assertTrue(factory.call_args.kwargs['inventory_only']);metadata.close.assert_called_once()
+        metadata.call.assert_called_once_with('plugin/installed',{'cwds':[]},timeout=15)
         config={'plugins':inventory}
         denied=integration_policy(config,[]);allowed=integration_policy(config,['plugins.extra@catalog'])
         self.assertEqual(denied,{'plugins':{'extra@catalog':{'enabled':False,'mcp_servers':{'embedded':{'enabled':False}}}}})
@@ -33,10 +35,52 @@ class AdvancedTests(unittest.TestCase):
         self.assertNotIn('private',json.dumps([inventory,denied,allowed]))
 
     def test_unknown_or_missing_plugin_inventory_fails_closed(self):
-        for stdout in ('{}',json.dumps({'installed':[{'pluginId':'extra@catalog','version':'1.0'}]}),json.dumps({'installed':[{'pluginId':'../bad@catalog','version':'1.0'}]})):
-            with self.subTest(stdout=stdout),patch('orchestrator.transport.subprocess.run',return_value=SimpleNamespace(stdout=stdout)):
+        for result in ({},{'marketplaces':[],'marketplaceLoadErrors':[{'name':'unavailable'}]},{'marketplaces':[{'plugins':[{'installed':True,'id':'extra@catalog','localVersion':'1.0'}]}]},{'marketplaces':[{'plugins':[{'installed':True,'id':'../bad@catalog','version':'1.0'}]}]}):
+            with self.subTest(result=result),patch('orchestrator.transport.AppServer',return_value=SimpleNamespace(call=lambda *a,**k:result,close=lambda:None)):
                 with self.assertRaises(BridgeError) as caught:installed_plugin_inventory('codex',self.base/'missing')
                 self.assertEqual(caught.exception.code,'INTEGRATION_INVENTORY_UNAVAILABLE')
+
+    def test_inventory_metadata_connection_cannot_start_execution_or_tools(self):
+        server=AppServer.__new__(AppServer);server.inventory_only=True
+        for method in ('turn/start','thread/start','thread/resume','command/exec','mcpServer/tool/call','plugin/list'):
+            with self.subTest(method=method),self.assertRaises(BridgeError) as caught:server.call(method,{})
+            self.assertEqual(caught.exception.code,'INVENTORY_ONLY')
+
+    def test_current_explicit_verdict_labels_are_distinct_from_quoted_or_historical_text(self):
+        for text,expected in [('**Verdict consolidé : REJECT maintenu** pour le candidat actuel.','REJECT'),('Verdict final : ACCEPT — vérifié.','ACCEPT'),('**ACCEPT** — verified.','ACCEPT'),('REJECT: current defect.','REJECT')]:
+            with self.subTest(text=text):self.assertEqual(leading_verdict(text),expected)
+        for text in ('> Verdict consolidé : ACCEPT','"Verdict consolidé : ACCEPT"','Earlier verdict: ACCEPT','Verdict précédent : ACCEPT','Verdict consolidé : pas ACCEPT','Verdict consolidé : ACCEPT ou REJECT ?','```text\nACCEPT\n```','I will inspect.\nACCEPT'):
+            with self.subTest(text=text):self.assertIsNone(leading_verdict(text))
+
+    def test_consolidated_french_reject_can_review_bound_current_delivery(self):
+        self.delivery('Delivered implementation');auditor=self.workers[('alpha','Auditor')];r=self.a.registry
+        link=self.a._audit_request(r.one('conversations','thread_id',auditor),'alpha::task',[self.source()])
+        r.reserve_message('alpha::consolidated-audit',auditor,'Audit',None,self.a.instance,audit_link=link)
+        r.mark_dispatching('alpha::consolidated-audit',self.a.instance);turn=str(uuid.uuid4());r.set_message('alpha::consolidated-audit','sent',turn)
+        r.completed(auditor,{'id':turn,'status':'completed','items':[{'type':'agentMessage','phase':'commentary','text':'ACCEPT is not established.'},{'type':'agentMessage','phase':'final_answer','text':'**Verdict consolidé : REJECT maintenu** pour le candidat actuel.'}]})
+        task=r.one('tasks','id','alpha::task')
+        with self.assertRaises(BridgeError):self.a.task_review(task['id'],task['revision'],'alpha::consolidated-audit','accept','Cannot reverse the actual reject')
+        self.assertEqual(r.one('tasks','id',task['id'])['state'],'needs_audit')
+        result=self.a.task_review(task['id'],task['revision'],'alpha::consolidated-audit','reject','Confirmed current evidence')
+        self.assertEqual(result['state'],'rejected')
+
+    def test_installed_metadata_failure_is_closed_and_has_actionable_cause(self):
+        metadata=SimpleNamespace(call=Mock(side_effect=BridgeError('RPC_TIMEOUT','Recorded metadata timeout')),close=Mock())
+        with patch('orchestrator.transport.AppServer',return_value=metadata):
+            with self.assertRaises(BridgeError) as caught:installed_plugin_inventory('codex',self.base)
+        metadata.close.assert_called_once();self.assertEqual(caught.exception.code,'INTEGRATION_INVENTORY_UNAVAILABLE')
+        self.assertEqual(caught.exception.details['cause'],'RPC_TIMEOUT');self.assertFalse(caught.exception.details['worker_turn_started'])
+
+    def test_malformed_inventory_is_distinct_from_a_genuine_empty_installed_list(self):
+        malformed=[{'marketplaces':{}},{'marketplaces':''},{'marketplaces':[{'plugins':{}}]},{'marketplaces':[{'plugins':''}]},{'marketplaces':[None]},{'marketplaces':[{'plugins':[None]}]},{'marketplaces':[],'marketplaceLoadErrors':None}]
+        for response in malformed:
+            metadata=SimpleNamespace(call=Mock(return_value=response),close=Mock())
+            with self.subTest(response=response),patch('orchestrator.transport.AppServer',return_value=metadata):
+                with self.assertRaises(BridgeError) as caught:installed_plugin_inventory('codex',self.base)
+                self.assertEqual(caught.exception.code,'INTEGRATION_INVENTORY_UNAVAILABLE')
+            metadata.close.assert_called_once()
+        with patch('orchestrator.transport.AppServer',return_value=SimpleNamespace(call=Mock(return_value={'marketplaces':[]}),close=Mock())):
+            self.assertEqual(installed_plugin_inventory('codex',self.base),{})
 
     def test_native_writer_conflict_is_actionable_without_dispatch_or_forced_unlock(self):
         server=AppServer.__new__(AppServer);server.guard=threading.RLock();server.closed=False;server.counter=0;server.pending={}

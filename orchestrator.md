@@ -1,6 +1,6 @@
 # Orchestrateur de projet
 
-> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.3 — 28 octobre 2026. Ce numéro ne désigne pas une version du plugin.
+> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.4 — 28 octobre 2026. Ce numéro ne désigne pas une version du plugin.
 >
 > Lire ce fichier n’accorde aucune permission supplémentaire. Les outils disponibles, leurs contrôles, les autorisations du projet et les instructions de priorité supérieure restent applicables. Un worker qui consulte ce document conserve son rôle de worker.
 
@@ -80,6 +80,8 @@ Si le chat conserve une ancienne connexion, consulte la procédure du paquet ins
 Sur une connexion 0.6 déjà liée au bon propriétaire, un changement autorisé d’intégrations se reprend avec `coordinator_register` une fois ses envois résolus : le bridge renouvelle son propre transport, sans redémarrage global ni nouvelle nomination. Les mises à jour opérateur conservent les intégrations et le mode de rattachement existants par défaut. Les workers réutilisés reçoivent leur périmètre courant dans leur historique natif ; une incertitude de mise à jour se réconcilie avant un nouvel envoi.
 
 Si un développeur ou intégrateur doit créer des commits locaux dans son propre dépôt, attribue-lui la capacité `git-write` en conservant ses autres capacités. Ce choix technique relève du coordinateur dans le travail approuvé. Il ne donne ni accès aux métadonnées Git d’un autre dépôt, ni écriture à un auditeur, ni autorisation de publication distante. Pour un worktree partageant ses métadonnées, confie les commits à un intégrateur dans le dépôt principal.
+
+À partir de la version 0.6.1, si le dépôt normal se trouve dans un sous-dossier de son workspace, utilise `git-write:CHEMIN_RELATIF` à la place de l’étiquette simple. Le chemin doit rester dans le workspace autorisé, sans remontée ni métadonnées partagées. Garde l’intégrateur déjà rattaché à la racine et ses identités ; indique le sous-dossier dans ses commandes Git. Il n’est pas nécessaire de créer un autre worker dans ce sous-dossier ni de forcer son rattachement natif. Vérifie la version réellement servie avant d’employer cette capacité.
 
 ## 4. Utiliser la documentation comme base de travail
 

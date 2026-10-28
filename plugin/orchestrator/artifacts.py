@@ -127,15 +127,28 @@ class ArtifactOperations:
         if any(r in worker['role'].lower() for r in ('audit','architect','review')):return []
         capabilities=worker.get('capabilities') or []
         if isinstance(capabilities,str):capabilities=json.loads(capabilities)
-        if 'git-write' not in capabilities:return []
-        workspace=worker.get('workspace') or project['root'];metadata=pathlib.Path(workspace)/'.git'
-        if not metadata.is_dir():
-            raise BridgeError('GIT_WORKSPACE_REQUIRED','git-write needs a normal repository with its own .git directory. Use an integration worker in the approved primary repository; shared worktree metadata is not automatically writable.')
-        path=checked_root(metadata)
+        workspace=worker.get('workspace') or project['root'];repositories=[]
+        for capability in capabilities:
+            if capability=='git-write':repositories.append(pathlib.Path(workspace))
+            elif capability.startswith('git-write:'):
+                relative=capability[len('git-write:'):].replace('\\','/')
+                parts=pathlib.PurePosixPath(relative)
+                if not relative or parts.is_absolute() or ':' in relative or '..' in parts.parts:
+                    raise BridgeError('GIT_SCOPE_LOST','A nested Git capability requires a relative repository path inside this worker workspace.')
+                repositories.append(checked_root(pathlib.Path(workspace).joinpath(*parts.parts)))
         from .projects import contained,common_git_dir
-        if not contained(path,workspace) or not contained(path,project['root']) or common_git_dir(workspace)!=path_key(path):
-            raise BridgeError('GIT_SCOPE_LOST','Git metadata must belong to this exact approved repository, without an external common directory.')
-        return [str(path)]
+        roots=[]
+        for repository in repositories:
+            if not contained(repository,workspace) or not contained(repository,project['root']):
+                raise BridgeError('GIT_SCOPE_LOST','The Git repository must stay inside this worker workspace and source project.')
+            metadata=repository/'.git'
+            if not metadata.is_dir():
+                raise BridgeError('GIT_WORKSPACE_REQUIRED','git-write needs a normal repository with its own .git directory. Use an integration worker in that repository, or git-write:RELATIVE_PATH for a nested normal repository on the existing root worker; shared worktree metadata is not automatically writable.')
+            path=checked_root(metadata)
+            if not contained(path,workspace) or not contained(path,project['root']) or common_git_dir(repository)!=path_key(path):
+                raise BridgeError('GIT_SCOPE_LOST','Git metadata must belong to this exact approved repository, without an external common directory.')
+            if str(path) not in roots:roots.append(str(path))
+        return roots
 
     def _worker_sandbox(self,worker,project):
         if any(r in worker['role'].lower() for r in ('audit','architect','review')):

@@ -57,7 +57,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 'routine_runtime_preflight':'runtime_check probes both role policies and can repair standard per-user Windows Python read/execute access.',
                 'external_artifact_roots_supported':True,
                 'existing_policy_refresh':'coordinator_register with original IDs after project sends resolve; no app restart or second nomination',
-                'git_write_capability':{'name':'git-write','assignment':'conversation_create or conversation_role capabilities','scope':'normal repository own .git directory only; read-only roles never gain writes; shared worktree metadata is excluded'},
+                'git_write_capability':{'name':'git-write','nested_repository':'git-write:RELATIVE_PATH','assignment':'conversation_create or conversation_role capabilities','scope':'normal repository own .git directory only, inside this worker workspace; read-only roles never gain writes; shared worktree metadata is excluded'},
                 'writer_conflict_recovery':'WRITER_CONFLICT preserves the original identity and refuses pre-dispatch resume; reconcile pending work, then reuse another suitable project worker or create a successor with explicit handoff.',
                 'windows_worker_backend':'mxc_required_no_legacy_fallback' if os.name=='nt' else 'platform_sandbox',
                 'artifact_operator':{'command':[sys.executable,'-I','-B','-S',str(root/'artifact.py')],

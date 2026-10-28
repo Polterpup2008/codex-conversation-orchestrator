@@ -273,6 +273,22 @@ class ArtifactRootTests(unittest.TestCase):
         (root/'.git/commondir').write_text(str(self.roots['beta']),encoding='utf-8')
         with self.assertRaises(BridgeError):self.a._worker_sandbox(worker,self.a._project('alpha'))
 
+    def test_nested_normal_repository_keeps_root_worker_and_exact_git_write_scope(self):
+        root=self.roots['alpha'];nested=root/'engine';nested.mkdir();subprocess.run(['git','init','--quiet',str(nested)],check=True)
+        worker=self.worker();worker['capabilities']='["git-write:engine"]'
+        self.assertEqual(self.a._worker_sandbox(worker,self.a._project('alpha'))['writableRoots'],[str(root),str(nested/'.git')])
+        self.assertEqual(worker['workspace'],str(root))
+        worker['role']='Auditor';self.assertEqual(self.a._worker_sandbox(worker,self.a._project('alpha')),{'type':'readOnly','networkAccess':False})
+
+    def test_nested_git_scope_refuses_parent_absolute_and_shared_metadata(self):
+        worker=self.worker();project=self.a._project('alpha')
+        for value in ('git-write:../beta','git-write:/absolute','git-write:C:/absolute','git-write:'):
+            worker['capabilities']=json.dumps([value])
+            with self.subTest(value=value),self.assertRaises(BridgeError):self.a._worker_sandbox(worker,project)
+        nested=self.roots['alpha']/'engine';nested.mkdir();(nested/'.git').write_text('gitdir: '+str(self.roots['beta'])+'\n')
+        worker['capabilities']='["git-write:engine"]'
+        with self.assertRaisesRegex(BridgeError,'normal repository'):self.a._worker_sandbox(worker,project)
+
     def test_git_inspection_cannot_borrow_the_persistent_mcp_input_pipe(self):
         root=self.roots['alpha'];subprocess.run(['git','init','--quiet',str(root)],check=True)
         self.a.close()

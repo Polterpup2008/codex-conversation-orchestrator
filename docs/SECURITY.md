@@ -25,6 +25,10 @@ The Codex sandbox is not a container guaranteeing confidentiality of all readabl
 
 ## Private state
 
+Version 0.6 discovers installed plugin manifests as well as configured entries. Embedded plugin MCP servers receive explicit enable/disable overrides: the native runtime can otherwise start an embedded server despite its plugin's top-level `enabled=false`. Dispatch also supplies the native disabled-plugin list. Unknown/unreadable installed inventories fail closed when plugin integrations are requested. These overrides are process-local; global settings and other bridges are unchanged.
+
+The optional `git-write` capability adds only a writer's own repository metadata directory. Read-only roles remain read-only, shared external Git metadata is refused, and remote publication is not authorized. Loaded worker scope is refreshed only while idle on its owning connection. The native append API receives registry-derived role/path facts, never project-file or task text as developer authority. Uncertain updates retain a lifecycle fence until the transport is closed and reconciled.
+
 State includes prompts, replies, paths, thread IDs and audit evidence. Keep it private. Do not publish databases/WAL files, sessions, logs, backups or transcripts. The public release excludes those files and historical private reports. The installer generates its machine-specific runtime launcher outside the checkout.
 
 The registry intentionally retains recovery history. Transport logs are bounded but may contain diagnostic/project metadata; inspect them before sharing. No third-party Python package or runtime is vendored.

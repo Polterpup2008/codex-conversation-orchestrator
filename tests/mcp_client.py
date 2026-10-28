@@ -29,7 +29,7 @@ class MCPClient:
                     target = self.pending.get(packet.get('id'))
                 if target:
                     target.put(packet)
-        threading.Thread(target=reader, daemon=True).start()
+        self.reader=threading.Thread(target=reader, daemon=True);self.reader.start()
         self.initialization=self.request('initialize', {'protocolVersion': '2025-03-26', 'clientInfo': {'name': 'experiment', 'version': '1'}, 'capabilities': {}})
         self.process.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n'); self.process.stdin.flush()
 
@@ -59,4 +59,6 @@ class MCPClient:
             self.process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             self.process.terminate(); self.process.wait(timeout=10)
+        self.reader.join(timeout=2)
+        self.process.stdout.close()
         self.stderr.close()

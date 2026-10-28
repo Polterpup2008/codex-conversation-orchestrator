@@ -4,17 +4,49 @@ import pathlib
 import threading
 import unittest
 import uuid
+from unittest.mock import patch
+from types import SimpleNamespace
 import test_production
 from orchestrator.auditing import artifact_hash
 from orchestrator.errors import BridgeError
 from orchestrator.questions import fallback_question
 from orchestrator.storage import fingerprint
 from orchestrator.tools import invoke
-from orchestrator.transport import AppServer
+from orchestrator.transport import AppServer,integration_policy,installed_plugin_inventory
 
 
 class AdvancedTests(unittest.TestCase):
     setUp=test_production.ProductionTests.setUp
+
+    def test_default_enabled_embedded_plugin_servers_are_explicitly_denied(self):
+        home=self.base/'profile';root=home/'plugins/cache/catalog/extra/1.0';root.mkdir(parents=True)
+        (root/'.mcp.json').write_text(json.dumps({'mcpServers':{'embedded':{'command':'private-command','env':{'SECRET':'private-value'}}}}))
+        result=SimpleNamespace(stdout=json.dumps({'installed':[{'pluginId':'extra@catalog','version':'1.0'}]}))
+        with patch('orchestrator.transport.subprocess.run',return_value=result) as run:
+            inventory=installed_plugin_inventory('codex',home)
+        self.assertEqual(inventory,{'extra@catalog':{'mcp_servers':{'embedded':{}}}})
+        self.assertEqual(run.call_args.kwargs['stdin'],__import__('subprocess').DEVNULL)
+        config={'plugins':inventory}
+        denied=integration_policy(config,[]);allowed=integration_policy(config,['plugins.extra@catalog'])
+        self.assertEqual(denied,{'plugins':{'extra@catalog':{'enabled':False,'mcp_servers':{'embedded':{'enabled':False}}}}})
+        self.assertEqual(allowed['plugins']['extra@catalog']['mcp_servers']['embedded'],{'enabled':True})
+        self.assertNotIn('private',json.dumps([inventory,denied,allowed]))
+
+    def test_unknown_or_missing_plugin_inventory_fails_closed(self):
+        for stdout in ('{}',json.dumps({'installed':[{'pluginId':'extra@catalog','version':'1.0'}]}),json.dumps({'installed':[{'pluginId':'../bad@catalog','version':'1.0'}]})):
+            with self.subTest(stdout=stdout),patch('orchestrator.transport.subprocess.run',return_value=SimpleNamespace(stdout=stdout)):
+                with self.assertRaises(BridgeError) as caught:installed_plugin_inventory('codex',self.base/'missing')
+                self.assertEqual(caught.exception.code,'INTEGRATION_INVENTORY_UNAVAILABLE')
+
+    def test_native_writer_conflict_is_actionable_without_dispatch_or_forced_unlock(self):
+        server=AppServer.__new__(AppServer);server.guard=threading.RLock();server.closed=False;server.counter=0;server.pending={}
+        def reply(packet):server.pending[packet['id']].put({'error':{'code':-32600,'message':'This thread already has an active writer'}})
+        server._write=reply
+        with self.assertRaises(BridgeError) as caught:server.call('thread/resume',{'threadId':str(uuid.uuid4())})
+        self.assertEqual(caught.exception.code,'WRITER_CONFLICT')
+        self.assertFalse(caught.exception.details['turn_start_dispatched']);self.assertTrue(caught.exception.details['history_preserved'])
+        self.assertIn('another appropriate worker',caught.exception.details['recovery'])
+        self.assertEqual(server.pending,{})
 
     def test_serving_version_diagnostics_do_not_start_remote_transport(self):
         self.assertIsNone(self.a._transport)

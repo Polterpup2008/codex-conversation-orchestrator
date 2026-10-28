@@ -1,6 +1,6 @@
 # Orchestrateur de projet
 
-> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.3 — 26 octobre 2026. Ce numéro ne désigne pas une version du plugin.
+> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.3 — 28 octobre 2026. Ce numéro ne désigne pas une version du plugin.
 >
 > Lire ce fichier n’accorde aucune permission supplémentaire. Les outils disponibles, leurs contrôles, les autorisations du projet et les instructions de priorité supérieure restent applicables. Un worker qui consulte ce document conserve son rôle de worker.
 
@@ -76,6 +76,10 @@ Pour les audits de tâches en production, `message_send` reçoit `audit_task_id`
 **Connexions anciennes et artefacts externes :** la version 0.6 permet de conserver la racine des sources tout en enregistrant un dossier précis, dédié aux nouveaux artefacts et déjà approuvé par l’utilisateur. Utilise l’assistant opérateur documenté, après résolution des envois du projet ; ne donne pas accès à tout son parent et ne déplace pas les données ou runtimes existants. Ce droit ne se copie jamais avec les markdowns. Les auditeurs restent en lecture seule et les empreintes restent obligatoires. Sous Windows, le nouveau transport exige MXC par processus, sans modifier la configuration globale ni revenir silencieusement à un autre sandbox. Vérifier un exécutable ou ses fichiers ne valide pas CUDA ou un calcul GPU réel.
 
 Si le chat conserve une ancienne connexion, consulte la procédure du paquet installé pour `project_bridge.py`. Dans le même chat coordinateur d’origine et après résolution de ses envois, `--prepare-handoff` prépare l’observation, puis la libération exacte de l’ancien bridge précède `--handoff`. Le nouveau canal MCP conserve les identités et droits existants ; n’utilise plus les anciens outils écartés et garde la session ouverte pendant les travaux. Cette bascule locale ne demande aucune seconde nomination ou permission Python. Ne redémarre pas toute l’application pendant les travaux d’autres projets. Elle ne libère pas les verrous détenus par le bureau ou un autre client.
+
+Sur une connexion 0.6 déjà liée au bon propriétaire, un changement autorisé d’intégrations se reprend avec `coordinator_register` une fois ses envois résolus : le bridge renouvelle son propre transport, sans redémarrage global ni nouvelle nomination. Les mises à jour opérateur conservent les intégrations et le mode de rattachement existants par défaut. Les workers réutilisés reçoivent leur périmètre courant dans leur historique natif ; une incertitude de mise à jour se réconcilie avant un nouvel envoi.
+
+Si un développeur ou intégrateur doit créer des commits locaux dans son propre dépôt, attribue-lui la capacité `git-write` en conservant ses autres capacités. Ce choix technique relève du coordinateur dans le travail approuvé. Il ne donne ni accès aux métadonnées Git d’un autre dépôt, ni écriture à un auditeur, ni autorisation de publication distante. Pour un worktree partageant ses métadonnées, confie les commits à un intégrateur dans le dépôt principal.
 
 ## 4. Utiliser la documentation comme base de travail
 
@@ -175,6 +179,8 @@ Utilise les contrôles d’appartenance, de rôle, de révision et de propriét�
 Ne renvoie jamais aveuglément un message dont la livraison est incertaine. Réconcilie son identifiant et son état. Un délai dépassé n’autorise ni la réémission ni l’abandon silencieux de la tâche.
 
 Respecte les verrous du bureau, les limites d’abonnement et les permissions. Préfère les événements ou les attentes bornées aux interrogations rapides répétées. Fixe une concurrence raisonnable et des limites de boucles ; après trois cycles infructueux par défaut, réévalue la cause et l’approche au lieu de recommencer à l’identique.
+
+Si un worker inactif reste détenu par un autre client (`WRITER_CONFLICT`), réutilise un autre worker qualifié du projet ou crée un successeur avec passation, en gardant l’indépendance des audits. Conserve l’ancien chat et les tentatives ; ne supprime pas ses verrous. Ne bloque pas les tâches indépendantes sur une demande routinière de fermeture d’onglet ou de redémarrage global. Une exécution encore active ou ambiguë doit d’abord être réconciliée.
 
 Ces limites de pilotage ne remplacent pas des protections techniques dans le plugin. Ne déclare pas « exactement une fois », « isolation parfaite » ou « fonctionnement permanent » sans preuve.
 

@@ -8,6 +8,7 @@ import uuid
 import importlib.util
 import tomllib
 import subprocess
+import types
 from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'plugin'))
@@ -18,6 +19,37 @@ from orchestrator.runtime import python_files, repairable_python_root
 from orchestrator.service import Service
 from orchestrator.tools import invoke
 from test_production import RecordedTransport
+
+
+class ExistingGrantOptionsTests(unittest.TestCase):
+    def setUp(self):
+        from test_production import ProductionTests
+        ProductionTests.setUp(self)
+        spec=importlib.util.spec_from_file_location('operator_authorize',pathlib.Path(__file__).resolve().parents[1]/'scripts/authorize.py')
+        self.operator=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.operator)
+
+    def options(self,**values):
+        args=dict(project_id='alpha',coordinator=self.coordinators['alpha'],desktop_ui_project_id=None,headless=None,allow_integration=[],replace_integrations=False)
+        args.update(values);return self.operator.existing_grant_options(self.a.registry,types.SimpleNamespace(**args))
+
+    def test_updates_keep_existing_ui_mode_and_add_integrations(self):
+        grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],desktop_ui_id='existing-ui',integrations=['mcp_servers.old'])
+        self.assertEqual(self.options(allow_integration=['mcp_servers.new']),{'desktop_ui_id':'existing-ui','headless':False,'integrations':['mcp_servers.new','mcp_servers.old']})
+
+    def test_omitted_options_preserve_existing_headless_and_all_permissions(self):
+        grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],headless=True,integrations=['plugins.example'])
+        self.assertEqual(self.options(),{'desktop_ui_id':None,'headless':True,'integrations':['plugins.example']})
+
+    def test_explicit_replacement_is_required_to_remove_integrations(self):
+        grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],headless=True,integrations=['mcp_servers.old'])
+        self.assertEqual(self.options(replace_integrations=True)['integrations'],[])
+        self.assertEqual(self.options(replace_integrations=True,allow_integration=['mcp_servers.new'])['integrations'],['mcp_servers.new'])
+
+    def test_revoked_or_foreign_owner_does_not_inherit_previous_permission_set(self):
+        grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],headless=True,integrations=['mcp_servers.old'])
+        self.assertEqual(self.options(coordinator=self.coordinators['beta'])['integrations'],[])
+        with self.a.registry.connect() as db:db.execute("UPDATE authorizations SET enabled=0 WHERE project_id='alpha'")
+        self.assertEqual(self.options()['integrations'],[])
 
 
 class AppointmentTests(unittest.TestCase):

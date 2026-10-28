@@ -31,7 +31,44 @@ def merge_config(target,source):
 
 
 def integration_policy(config,allow_integrations=()):
-    return {section:{name:{'enabled':f'{section}.{name}' in allow_integrations and 'conversation-orchestrator' not in name and name!='conversation_orchestrator'} for name in config.get(section,{})} for section in ('mcp_servers','plugins') if config.get(section)}
+    policy={section:{name:{'enabled':f'{section}.{name}' in allow_integrations and 'conversation-orchestrator' not in name and name!='conversation_orchestrator'} for name in config.get(section,{})} for section in ('mcp_servers','plugins') if config.get(section)}
+    for name,entry in config.get('plugins',{}).items():
+        servers=entry.get('mcp_servers',{})
+        if servers:policy['plugins'][name]['mcp_servers']={server:{'enabled':policy['plugins'][name]['enabled']} for server in servers}
+    return policy
+
+
+def installed_plugin_inventory(executable,home):
+    """Include default-enabled plugins absent from config.toml in the deny list."""
+    try:
+        result=subprocess.run([executable,'plugin','list','--json'],stdin=subprocess.DEVNULL,
+            capture_output=True,text=True,encoding='utf-8',timeout=15,
+            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),check=True)
+        installed=json.loads(result.stdout)['installed']
+        if not isinstance(installed,list):raise ValueError('Invalid plugin inventory')
+        names=[entry['pluginId'] for entry in installed]
+        if not all(isinstance(name,str) and name for name in names):raise ValueError('Invalid plugin IDs')
+        inventory={}
+        for entry in installed:
+            name=entry['pluginId'];plugin,marketplace=name.rsplit('@',1)
+            if any(part in ('','.','..') or '/' in part or '\\' in part for part in (plugin,marketplace,entry['version'])):raise ValueError('Invalid plugin cache identity')
+            root=home/'plugins/cache'/marketplace/plugin/entry['version']
+            if not root.is_dir():
+                source=entry.get('source',{})
+                root=pathlib.Path(source['path']) if source.get('source')=='local' else root
+            if not root.is_dir():raise ValueError('Installed plugin cache unavailable')
+            servers={}
+            # Native remote plugins may start their embedded MCP even with the
+            # plugin's top-level enabled=false. Explicitly disable each server.
+            for filename in ('.mcp.json','mcp.json'):
+                path=root/filename
+                if not path.is_file():continue
+                manifest=json.loads(path.read_text(encoding='utf-8-sig'))
+                for server in manifest.get('mcpServers',{}):servers[server]={}
+            inventory[name]={'mcp_servers':servers} if servers else {}
+        return inventory
+    except (OSError,subprocess.SubprocessError,ValueError,KeyError,TypeError) as error:
+        raise BridgeError('INTEGRATION_INVENTORY_UNAVAILABLE','Cannot verify installed plugins; refusing to inherit unknown integrations.') from error
 
 
 class AppServer:
@@ -54,7 +91,7 @@ class AppServer:
         # Explicit selection fails if unsupported; never silently weaken it.
         self.strict_windows_sandbox = os.name=='nt' if strict_windows_sandbox is None else bool(strict_windows_sandbox)
         if self.strict_windows_sandbox:command += ['-c','windows.sandbox="mxc"']
-        command += ['-c','features.hooks=false','-c','features.multi_agent=false','-c','features.apps=false']
+        command += ['-c','features.hooks=false','-c','features.multi_agent=false','-c','features.apps=false','-c','features.remote_plugin=false']
         home = pathlib.Path(os.environ.get('CODEX_HOME', pathlib.Path.home()/'.codex'))
         config_files=[home/'config.toml']
         if workspace:
@@ -67,6 +104,14 @@ class AppServer:
             merge_config(effective,config)
         profile=effective.get('profiles',{}).get(effective.get('profile'),{})
         merge_config(effective,profile)
+        allowed_plugins=[name for name in allow_integrations if name.startswith('plugins.') and 'conversation-orchestrator' not in name]
+        if not allowed_plugins:
+            command+=['-c','features.plugins=false']
+            self.disabled_plugin_ids=[]
+        else:
+            inventory=installed_plugin_inventory(executable,home)
+            self.disabled_plugin_ids=[name for name in inventory if 'plugins.'+name not in allowed_plugins or 'conversation-orchestrator' in name]
+            for name,entry in inventory.items():merge_config(effective.setdefault('plugins',{}).setdefault(name,{}),entry)
         for section,overrides in integration_policy(effective,allow_integrations).items():
             # CLI override paths split on dots without parsing quoted components.
             # Override the complete table with a TOML literal instead.
@@ -123,6 +168,9 @@ class AppServer:
             except queue.Empty as e:
                 raise BridgeError('RPC_TIMEOUT', f'{method} timed out; its outcome may be unknown. No automatic retry.', {'method': method}) from e
             if 'error' in packet:
+                if method=='thread/resume' and 'already has an active writer' in packet['error'].get('message','').lower():
+                    raise BridgeError('WRITER_CONFLICT',packet['error']['message'],{'method':method,'native_error':packet['error'],
+                        'turn_start_dispatched':False,'history_preserved':True,'recovery':'Keep this thread and its keys. Reconcile any pending execution. If this is an idle worker held by another client, reuse another appropriate worker in this project or create a successor with explicit context handoff; keep an independent auditor independent. Do not delete locks or archive/unarchive to force release. No routine human permission is needed for authorized worker allocation.'})
                 raise BridgeError('RPC_ERROR', packet['error'].get('message', str(packet['error'])), {'method':method, **packet['error']})
             return packet['result']
         finally:

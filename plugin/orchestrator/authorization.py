@@ -139,9 +139,14 @@ class AuthorizationOperations:
             if getattr(self,'project_scope',None) not in (None,project_id):
                 raise BridgeError('PROJECT_ACCESS_DENIED','An MCP connection cannot switch projects.')
             if self.project_scope==project_id:
-                project=self._project(project_id)
                 if self.coordinator_identity!=coordinator_thread_id:
                     raise BridgeError('COORDINATOR_CONFLICT','Coordinator identity cannot change on this connection.')
+                grants=self.registry.rows('SELECT * FROM authorizations WHERE project_id=? AND enabled=1',(project_id,))
+                if not grants or grants[0]['coordinator_thread_id']!=coordinator_thread_id:
+                    raise BridgeError('PROJECT_NOT_AUTHORIZED','The original enabled coordinator grant is required; re-registration cannot undo revocation or change owner.')
+                if grants[0]['created']!=self.project_policy['created']:
+                    return self._refresh_registration(project_id,coordinator_thread_id,grants[0])
+                project=self._project(project_id)
                 return {'project':project,'coordinator_thread_id':coordinator_thread_id,'connection_scope':project_id,'duplicate_prevented':True}
             project = self.registry.one('projects', 'id', project_id)
             grant = self.registry.rows('SELECT * FROM authorizations WHERE project_id=? AND enabled=1', (project_id,))
@@ -172,6 +177,36 @@ class AuthorizationOperations:
         return {'project': project, 'coordinator_thread_id': coordinator_thread_id,
                 'connection_scope': project_id, 'authorization': 'local_operator_grant',
                 'desktop_mode': 'headless' if grant[0]['headless'] else 'native_attachment_required'}
+
+    def _refresh_registration(self,project_id,coordinator,grant):
+        """Reuse an already designated owner after an operator policy change."""
+        project=self.registry.one('projects','id',project_id)
+        if os.path.normcase(os.path.abspath(project['root']))!=path_key(project['root']):
+            raise BridgeError('SCOPE_LOST','The original project root resolves elsewhere.')
+        with self.registry.transaction() as db:
+            lease=db.execute('SELECT owner_token FROM coordinator_leases WHERE project_id=?',(project_id,)).fetchone()
+            role=db.execute('SELECT project_id,role FROM conversations WHERE thread_id=?',(coordinator,)).fetchone()
+            if not lease or lease['owner_token']!=self.instance or not role or role['project_id']!=project_id or role['role'].lower()!='coordinator':
+                raise BridgeError('COORDINATOR_CONFLICT','Only the same registered coordinator with its existing lease can refresh policy.')
+            if db.execute("SELECT 1 FROM messages m JOIN conversations c ON c.thread_id=m.thread_id WHERE c.project_id=? AND m.state IN ('preparing','sent','unknown')",(project_id,)).fetchone() or db.execute('SELECT 1 FROM operations o JOIN conversations c ON c.thread_id=o.thread_id WHERE c.project_id=?',(project_id,)).fetchone() or db.execute("SELECT 1 FROM creations WHERE state='preparing' AND (project_id=? OR project_id IS NULL)",(project_id,)).fetchone():
+                raise BridgeError('PROJECT_BUSY','Reconcile this project sends and lifecycle operations before refreshing its existing policy.')
+        # Metadata verification uses a separate transport with default denied
+        # integrations. Stale project policy must not prevent this read or be
+        # used for worker execution during validation.
+        verifier=self.transport_factory(self.data_dir/'logs')
+        try:thread=verifier.call('thread/read',{'threadId':coordinator,'includeTurns':False})['thread']
+        finally:verifier.close()
+        if path_key(thread['cwd'])!=path_key(project['root']):
+            raise BridgeError('PROJECT_CONFLICT','The original coordinator moved away from the granted source root.')
+        self.bridge_release()
+        with self.registry.transaction() as db:
+            current=db.execute('SELECT * FROM authorizations WHERE project_id=? AND enabled=1',(project_id,)).fetchone()
+            lease=db.execute('SELECT owner_token FROM coordinator_leases WHERE project_id=?',(project_id,)).fetchone()
+            if not current or dict(current)!=grant or current['coordinator_thread_id']!=coordinator or not lease or lease['owner_token']!=self.instance:
+                raise BridgeError('COORDINATOR_CONFLICT','The original grant or lease changed during policy refresh.')
+            self.project_policy=dict(current)
+        return {'project':project,'coordinator_thread_id':coordinator,'connection_scope':project_id,'policy_refreshed':True,
+                'additional_human_confirmation_required':False,'restart_required':False,'note':'Existing authorization refreshed; the next worker operation reconnects with its current integration policy. IDs, history and other project grants are unchanged.'}
 
     def authorize_call(self, name, arguments):
         """Apply scope at the MCP boundary before any resource lookup or mutation."""

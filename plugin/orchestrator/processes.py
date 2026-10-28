@@ -32,7 +32,7 @@ def owner_snapshot(pid):
                     f"$handoffChildren=@(Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' -ErrorAction Stop); "
                     "@{identity=if($handoffOwner){$handoffOwner.CreationDate.ToUniversalTime().ToString('o')}else{$null}; "
                     "children=@($handoffChildren | ForEach-Object {@{pid=$_.ProcessId;image=$_.ExecutablePath}})} | ConvertTo-Json -Compress -Depth 4")
-            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',script],capture_output=True,text=True,timeout=15,
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',script],stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=15,
                                   creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             if result.returncode:raise ValueError('Process query failed')
             data=json.loads(result.stdout)

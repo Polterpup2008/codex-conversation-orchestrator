@@ -43,6 +43,8 @@ When a desktop-owned idle writer cannot be released through a supported owning-c
 
 After any owning-client release, verify that the original plugin can actually resume the worker before declaring it recovered; a newly restored desktop view can acquire a new writer. If other authorized work must continue, the coordinator may select another qualified independent auditor or create one using the existing project workflow. Keep the locked worker and failed attempt intact. This is an alternative allocation, not an unlock or an acceptance of the delivery. Do not delay independent work just to obtain a global restart window.
 
+Version0.6 classifies the native pre-resume refusal as `WRITER_CONFLICT`, with preserved history and `turn_start_dispatched=false`. The ordinary response to an idle externally held worker is autonomous project worker allocation/handoff, retaining audit independence. A close-tab or global-restart question is not the default recovery. Pending execution, uncertain lifecycle operations or indispensable unavailable context still require reconciliation rather than a replacement disguised as a successful audit.
+
 ## Validation of the tracking patch
 
 The 0.5.8 regression suite has 122 passing tests, including a live acknowledgment protected from provisional history, a separate observer that never resumes the owner, a local wait that leaves running work intact, and a completion committed at the deadline. The latter regression fails against the preceding implementation and passes with the patch. Existing interrupted-task recovery and independent acceptance tests remain in place.

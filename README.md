@@ -15,6 +15,8 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 - Independent task audits bound to the delivery revision and current artifact SHA256 values; coordinator-driven rejection/correction/re-audit loops.
 - Canonical paths, instruction/config propagation, verified worktrees and documented native desktop attachment with a pending-work gate.
 - Controlled worker permissions, integration allowlists, bounded MCP concurrency and local transport logs.
+- Same-owner policy refresh without restarting the app, additive integration-grant updates, and an explicit local `git-write` worker capability.
+- Current registry-derived worker scope appended through the native history API, so reused workers see updated roles/artifact access while prior conversation history is retained.
 - Ordinary worker questions with same-turn replies through a dedicated dynamic tool, plus durable completed-turn continuation for older conversations. Native approvals remain outside this mechanism.
 - Existing-worker expertise/freshness records, hash-bound context handoffs, dependency plans, shared architecture contracts and declared write-conflict checks.
 - Evidence-based audit assessments, including insufficient evidence and disputed reports, while retaining the existing independent acceptance gate.
@@ -24,6 +26,8 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 **Compatibility:** live integration targets Windows and Codex CLI `0.164.0-alpha.11.1`. Project APIs are experimental. This controlled production-mode release has documented platform limits; it does not promise universal compatibility, unattended background coordination, hostile-tenant isolation or automatic sidebar control from a standalone MCP server. Read the [autonomy qualification](docs/AUTONOMY_VALIDATION.md), [advanced validation report](docs/ADVANCED_VALIDATION.md) and retained [baseline qualification](docs/VALIDATION.md).
 
 ## Install
+
+The [0.6 stability report](docs/STABILITY_VALIDATION.md) records the native two-project correction/audit exercise, loaded-context regression, local Git capability and integration-filter checks, with their validation limits.
 
 Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscription sign-in for workers. Git is needed to clone and use worktrees. No third-party Python packages or API keys are required.
 

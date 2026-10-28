@@ -10,6 +10,19 @@ from orchestrator.transport import AppServer
 from orchestrator.tools import validate,KEY
 
 
+def existing_grant_options(registry,args):
+    """Grant updates retain this owner's existing UI and integration choices."""
+    previous=registry.rows('SELECT * FROM authorizations WHERE project_id=?',(args.project_id,))
+    projects=registry.rows('SELECT * FROM projects WHERE id=?',(args.project_id,))
+    prior=previous[0] if previous and previous[0]['enabled'] and previous[0]['coordinator_thread_id']==args.coordinator else None
+    project=projects[0] if prior and projects else None
+    ui=args.desktop_ui_project_id if args.desktop_ui_project_id is not None else project['desktop_ui_project_id'] if project else None
+    headless=bool(args.headless) if args.headless is not None else bool(prior['headless']) if prior and args.desktop_ui_project_id is None else False
+    integrations=set(args.allow_integration)
+    if prior and not args.replace_integrations:integrations.update(json.loads(prior['integrations']))
+    return {'desktop_ui_id':ui,'headless':headless,'integrations':sorted(integrations)}
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir',type=pathlib.Path,help='Private state directory override.')
@@ -18,8 +31,9 @@ def main():
     grant.add_argument('root',type=pathlib.Path);grant.add_argument('--project-id',required=True)
     grant.add_argument('--coordinator',required=True,help='Actual coordinator thread UUID.')
     grant.add_argument('--desktop-ui-project-id');grant.add_argument('--canonical-project-id')
-    grant.add_argument('--headless',action='store_true',help='Explicitly omit native sidebar synchronization.')
+    grant.add_argument('--headless',action='store_const',const=True,default=None,help='Explicitly omit native sidebar synchronization; existing mode is preserved when omitted.')
     grant.add_argument('--allow-integration',action='append',default=[],help='Exact mcp_servers.NAME or plugins.NAME. Hooks/apps/subagents stay disabled.')
+    grant.add_argument('--replace-integrations',action='store_true',help='Deliberately replace the integration list with the supplied entries; otherwise preserve existing approved entries and add new ones.')
     revoke=sub.add_parser('revoke');revoke.add_argument('project_id')
     for action in ('artifact-grant','artifact-revoke'):
         command=sub.add_parser(action,help='Register/revoke one exact external artifact directory under existing human authority; never a source-root change.')
@@ -39,7 +53,8 @@ def main():
                 project=remote.call('project/read',{'projectId':args.canonical_project_id})['project']
                 if not any(path_key(r['path'])==path_key(root) for r in project['roots']):raise BridgeError('PROJECT_CONFLICT','Canonical project roots differ.')
         finally:remote.close()
-        result=grant_project(registry,args.project_id,root,args.coordinator,args.desktop_ui_project_id,args.canonical_project_id,args.headless,args.allow_integration)
+        options=existing_grant_options(registry,args)
+        result=grant_project(registry,args.project_id,root,args.coordinator,desktop_project_id=args.canonical_project_id,**options)
         print(json.dumps({'authorized':result,'next_step':'Call coordinator_register in the designated coordinator.'},indent=2))
     elif args.action in ('artifact-grant','artifact-revoke'):
         validate(args.project_id,KEY)

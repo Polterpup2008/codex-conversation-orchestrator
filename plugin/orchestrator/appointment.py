@@ -27,8 +27,10 @@ def caller_proof(thread, challenge, codex_home=None):
     expected = 'ORCHESTRATOR_CALLER:'+challenge+':'+thread['id']
     helper = re.sub('/+', '/', str(pathlib.Path(__file__).resolve().parents[1]/'caller.py').replace('\\', '/')).casefold()
     metadata = None; calls = set(); proof = None
+    stream = None
     try:
-        for number, line in enumerate(path.open(encoding='utf-8'), 1):
+        stream = path.open(encoding='utf-8')
+        for number, line in enumerate(stream, 1):
             try: packet = json.loads(line)
             except ValueError: continue
             item = packet.get('payload', {})
@@ -49,6 +51,8 @@ def caller_proof(thread, challenge, codex_home=None):
                          'challenge_sha256': hashlib.sha256(challenge.encode()).hexdigest()}
     except OSError as exc:
         raise BridgeError('APPOINTMENT_CALLER_UNAVAILABLE', 'Cannot read the native caller UUID proof.', {'reason': str(exc)}) from exc
+    finally:
+        if stream is not None:stream.close()
     if not proof or not metadata or metadata.get('id') != thread['id'] or path_key(metadata['cwd']) != path_key(thread['cwd']):
         raise BridgeError('APPOINTMENT_CALLER_UNAVAILABLE', 'The MCP host did not supply its caller UUID. Read bridge_status.caller_probe and run its read-only command in THIS chat shell, then retry coordinator_activate on this SAME connection. No registry write or second human authorization is needed.')
     return proof

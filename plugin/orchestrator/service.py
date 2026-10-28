@@ -56,6 +56,9 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                     'instruction':'When MCP lacks CODEX_THREAD_ID, execute this read-only command inside THIS chat shell, then call coordinator_activate on this same connection. It prints a nonce-bound identity into this chat native tool history; no registry write or human grant.'},
                 'routine_runtime_preflight':'runtime_check probes both role policies and can repair standard per-user Windows Python read/execute access.',
                 'external_artifact_roots_supported':True,
+                'existing_policy_refresh':'coordinator_register with original IDs after project sends resolve; no app restart or second nomination',
+                'git_write_capability':{'name':'git-write','assignment':'conversation_create or conversation_role capabilities','scope':'normal repository own .git directory only; read-only roles never gain writes; shared worktree metadata is excluded'},
+                'writer_conflict_recovery':'WRITER_CONFLICT preserves the original identity and refuses pre-dispatch resume; reconcile pending work, then reuse another suitable project worker or create a successor with explicit handoff.',
                 'windows_worker_backend':'mxc_required_no_legacy_fallback' if os.name=='nt' else 'platform_sandbox',
                 'artifact_operator':{'command':[sys.executable,'-I','-B','-S',str(root/'artifact.py')],
                     'instruction':'For an already human-approved artifact location, run grant PROJECT_ID EXACT_DIRECTORY --reason EXISTING_AUTHORITY [--create] in the coordinator/operator shell after this project sends resolve. This is not a worker self-grant. No new human permission is needed for an existing approval. Use revoke with the same exact directory to remove it.'},
@@ -190,7 +193,10 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                     if self._other_owner(dict(lock)) or lock['owner_token']==self.instance:
                         raise BridgeError('PROJECT_BUSY','Another control operation is in progress; retry with the same stable key.')
                     db.execute('DELETE FROM control_lock WHERE id=1')
-                if self.project_scope:self._project(self.project_scope)
+                # Re-registering the same owner refreshes an existing changed
+                # grant; releasing an idle transport only relinquishes rights.
+                # Both methods validate their own narrower preconditions.
+                if self.project_scope and name not in ('coordinator_register','bridge_release'):self._project(self.project_scope)
                 db.execute('INSERT INTO control_lock VALUES(1,?,?)',(self.instance,name))
             self.control_context.active=True
             try:yield
@@ -226,6 +232,11 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 # A closed former transport cannot apply a delayed update now.
                 # Either observed outcome requires fresh host attachment proof.
                 with self.registry.connect() as db:db.execute("UPDATE conversations SET desktop_sync_state='pending',desktop_evidence=NULL WHERE thread_id=?",(thread_id,))
+            elif old['name']=='context_refresh':
+                # The former transport is closed: a delayed unsubscribe/resume
+                # cannot affect a future turn. This releases only the local
+                # uncertainty fence, without claiming another writer is free.
+                self.loaded.discard(thread_id);self.loaded_artifacts.pop(thread_id,None)
             else:raise BridgeError('LIFECYCLE_UNKNOWN','Unsupported recovery operation; keep the fence.')
         with self.registry.connect() as db:db.execute('DELETE FROM operations WHERE thread_id=? AND owner_token=?',(thread_id,old['owner_token']))
         return {'thread_id':thread_id,'reconciled':True,'worker':self.registry.one('conversations','thread_id',thread_id)}
@@ -361,7 +372,10 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         inherited_instructions=effective.get('developer_instructions') or ''
         worker_config=integration_policy(effective,json.loads(self.project_policy['integrations']) if self.project_policy else ())
         artifact_roots=self._artifact_roots(project)
-        worker_config.update({'model_reasoning_effort':route['effort'],'sandbox_workspace_write':{'network_access':False,'writable_roots':[cwd,*artifact_roots],'exclude_tmpdir_env_var':True,'exclude_slash_tmp':True}})
+        candidate_worker={'role':role,'workspace':cwd,'capabilities':capabilities or []}
+        git_roots=self._git_write_roots(candidate_worker,project)
+        write_roots=[cwd,*artifact_roots,*git_roots]
+        worker_config.update({'model_reasoning_effort':route['effort'],'sandbox_workspace_write':{'network_access':False,'writable_roots':write_roots,'exclude_tmpdir_env_var':True,'exclude_slash_tmp':True}})
         if any(r in role.lower() for r in ('audit','architect','review')):worker_config['sandbox_workspace_write']['writable_roots']=[]
         params={
             'cwd': cwd, 'ephemeral': False, 'approvalPolicy': 'never',
@@ -369,6 +383,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             'model':route['model'],'config':worker_config,'allowProviderModelFallback':False,
             'serviceName': 'conversation_orchestrator',
             'developerInstructions':self._role_instructions(role,project['root'],cwd,inherited_instructions,artifact_roots)}
+        if git_roots:params['developerInstructions']+='\nThe coordinator assigned git-write for local Git index/commit operations in this repository only. The explicit metadata root is '+git_roots[0]+'. Existing audit and integration requirements still apply; this capability grants no remote publication permission.'
         params['dynamicTools']=[QUESTION_TOOL]
         if desktop_id and not project.get('desktop_ui_project_id'):
             params['projectId']=desktop_id
@@ -423,6 +438,9 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         return self.rpc.call('thread/items/list', params)
 
     def conversation_resume(self, thread_id):
+        return self._resume_worker(thread_id,preparing_key=getattr(self.control_context,'preparing_key',None))
+
+    def _resume_worker(self,thread_id,preparing_key=None):
         worker, project = self._worker(thread_id)
         unresolved = self.registry.rows("SELECT * FROM messages WHERE thread_id=? AND state IN ('preparing','sent','unknown')", (thread_id,))
         if any(self._other_owner(row) for row in unresolved):
@@ -430,20 +448,70 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         # Resume is serialized locally so concurrent callers cannot double-load a thread.
         with self.resume_guard:
             rpc = self.rpc
+            with rpc.guard:tracked=any(tid==thread_id for tid,turn in rpc.active)
+            if tracked:return rpc.call('thread/read',{'threadId':thread_id,'includeTurns':False})
+            lifecycle=self.registry.rows("SELECT * FROM operations WHERE thread_id=? AND owner_token=? AND stage='preparing'",(thread_id,self.instance))
+            if lifecycle and lifecycle[0]['name'] in ('archive','desktop_prepare'):
+                # Lifecycle inspection needs ownership/status, not a model
+                # context update inside its existing per-worker reservation.
+                if thread_id in self.loaded:return rpc.call('thread/read',{'threadId':thread_id,'includeTurns':False})
+                result=rpc.call('thread/resume',{'threadId':thread_id,'excludeTurns':True,'cwd':worker.get('workspace') or project['root'],'approvalPolicy':'never',
+                    'sandbox':'read-only' if any(r in worker['role'].lower() for r in ('audit','architect','review')) else 'workspace-write'})
+                self.loaded.add(thread_id);self.loaded_artifacts[thread_id]=None
+                return result
             artifact_roots=self._artifact_roots(project)
             if thread_id not in self.loaded or self.loaded_artifacts.get(thread_id,())!=tuple(artifact_roots):
                 cwd=worker.get('workspace') or project['root']
                 effective=rpc.call('config/read',{'cwd':cwd,'includeLayers':False})['config']
                 inherited=effective.get('developer_instructions') or ''
                 worker_config=integration_policy(effective,json.loads(self.project_policy['integrations']) if self.project_policy else ())
-                worker_config['sandbox_workspace_write']={'network_access':False,'writable_roots':[cwd,*artifact_roots],'exclude_tmpdir_env_var':True,'exclude_slash_tmp':True}
+                git_roots=self._git_write_roots(worker,project)
+                worker_config['sandbox_workspace_write']={'network_access':False,'writable_roots':[cwd,*artifact_roots,*git_roots],'exclude_tmpdir_env_var':True,'exclude_slash_tmp':True}
                 if any(r in worker['role'].lower() for r in ('audit','architect','review')):worker_config['sandbox_workspace_write']['writable_roots']=[]
+                instructions=self._role_instructions(worker['role'],project['root'],cwd,inherited,artifact_roots)
+                if git_roots:instructions+='\nThe coordinator assigned git-write for local Git index/commit operations in this repository only. The explicit metadata root is '+git_roots[0]+'. Existing audit and integration requirements still apply; this capability grants no remote publication permission.'
+                refresh=thread_id in self.loaded
+                if refresh:
+                    for row in unresolved:
+                        if not (row['key']==preparing_key and row.get('owner_token')==self.instance and row['state']=='preparing' and row.get('stage')=='prepared' and row.get('turn_id') is None):
+                            raise BridgeError('CONVERSATION_BUSY','Reconcile this worker pending execution before refreshing its loaded context.')
+                    with rpc.guard:
+                        if any(tid==thread_id for tid,turn in rpc.active):raise BridgeError('CONVERSATION_BUSY','This worker is still executing; its loaded context cannot be replaced.')
+                    observed=rpc.call('thread/read',{'threadId':thread_id,'includeTurns':False})['thread']
+                    if observed.get('status',{}).get('type')=='active':raise BridgeError('CONVERSATION_BUSY','The native worker is active; wait before refreshing its context.')
+                    with self.registry.transaction() as db:
+                        db.execute("INSERT INTO operations(thread_id,owner_token,name,stage) VALUES(?,?,'context_refresh','dispatching')",(thread_id,self.instance))
+                    # Native thread/resume ignores overrides on loaded threads,
+                    # even between turns. Unsubscribe only this owned idle
+                    # worker, leaving other running workers on the bridge.
+                    rpc.call('thread/unsubscribe',{'threadId':thread_id})
+                    self.loaded.discard(thread_id);self.loaded_artifacts.pop(thread_id,None)
                 result = rpc.call('thread/resume', {'threadId': thread_id, 'excludeTurns': True,
                     'cwd':cwd, 'approvalPolicy': 'never',
-                    'developerInstructions':self._role_instructions(worker['role'],project['root'],cwd,inherited,artifact_roots),
+                    'developerInstructions':instructions,
                     'sandbox': 'read-only' if any(r in worker['role'].lower() for r in ('audit','architect','review')) else 'workspace-write', 'modelProvider': 'openai','config':worker_config})
                 self.loaded.add(thread_id)
+                if result['thread'].get('status',{}).get('type')=='active':
+                    self.loaded_artifacts[thread_id]=None
+                    if refresh:
+                        with self.registry.connect() as db:db.execute("DELETE FROM operations WHERE thread_id=? AND owner_token=? AND name='context_refresh'",(thread_id,self.instance))
+                    return result
+                if not refresh:
+                    with self.registry.transaction() as db:db.execute("INSERT INTO operations(thread_id,owner_token,name,stage) VALUES(?,?,'context_refresh','dispatching')",(thread_id,self.instance))
+                # Resuming updates configuration but does not replace the
+                # original developer message already in model-visible history.
+                # Append a current registry-derived summary through the native
+                # append API; never edit/rewrite prior messages or promote task
+                # text/project-file content into developer authority.
+                scope={'project_id':project['id'],'role':worker['role'],'source_root':project['root'],'workspace':cwd,
+                       'external_artifact_directories':artifact_roots,'git_metadata_write_roots':git_roots,
+                       'read_only':any(r in worker['role'].lower() for r in ('audit','architect','review')),'network_access':False}
+                scope_text=('Current orchestrator registry scope. This supersedes only earlier orchestrator-generated role/scope summaries for this same worker; it does not appoint a coordinator or override system, host or sandbox policy. '
+                            'Read-only roles remain read-only for source and external artifacts. The registered external directories below may be inspected for this project; no new human grant is needed to confirm this existing scope. '
+                            'Use the current assigned task and independent-audit requirements.\n'+json.dumps(scope,sort_keys=True))
+                rpc.call('thread/inject_items',{'threadId':thread_id,'items':[{'type':'message','role':'developer','content':[{'type':'input_text','text':scope_text}]}]})
                 self.loaded_artifacts[thread_id]=tuple(artifact_roots)
+                with self.registry.connect() as db:db.execute("DELETE FROM operations WHERE thread_id=? AND owner_token=? AND name='context_refresh'",(thread_id,self.instance))
             else:
                 result = rpc.call('thread/read', {'threadId': thread_id, 'includeTurns': False})
         return result
@@ -466,7 +534,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             if db.execute("SELECT 1 FROM messages WHERE thread_id=? AND state IN ('preparing','sent','unknown')",(thread_id,)).fetchone():
                 db.rollback();raise BridgeError('CONVERSATION_BUSY','A send began before the role change.')
             db.execute('UPDATE conversations SET role=?,capabilities=? WHERE thread_id=?', (role, json.dumps(capabilities or []), thread_id));db.commit()
-        self.loaded.discard(thread_id)
+        self.loaded_artifacts[thread_id]=None
         return {'worker': self.registry.one('conversations', 'thread_id', thread_id),
                 'effect': 'Role saved. Sandbox and role instructions refresh before the next managed turn.'}
 
@@ -495,7 +563,9 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         self.registry.routing(message_key,{'selection':route,'intent':intent})
         dispatched = False
         try:
-            state = self.conversation_resume(thread_id)['thread'].get('status', {})
+            prior=getattr(self.control_context,'preparing_key',None);self.control_context.preparing_key=message_key
+            try:state=self.conversation_resume(thread_id)['thread'].get('status', {})
+            finally:self.control_context.preparing_key=prior
             if state.get('type') == 'active':
                 raise BridgeError('CONVERSATION_BUSY', 'Codex reports an already active turn; refusing to steer it.')
             marker = f'[orchestrator-message:{message_key}]'
@@ -503,6 +573,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             dispatched = True
             turn = self.rpc.call('turn/start', {'threadId': thread_id,
                 'model':route['model'],'effort':route['effort'],
+                'disabledPluginIds':getattr(self.rpc,'disabled_plugin_ids',[]),
                 'sandboxPolicy':self._worker_sandbox(worker,self._project(worker['project_id'])),
                 'clientUserMessageId': str(uuid.uuid5(uuid.NAMESPACE_URL, message_key)),
                 'input': [{'type': 'text', 'text': f'{marker}\nAssigned registry role: {worker["role"]}\n{message}'}]})['turn']

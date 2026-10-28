@@ -121,7 +121,21 @@ class ArtifactOperations:
         return roots
 
     def _worker_write_roots(self,worker,project):
-        return [worker.get('workspace') or project['root'],*self._artifact_roots(project)]
+        return [worker.get('workspace') or project['root'],*self._artifact_roots(project),*self._git_write_roots(worker,project)]
+
+    def _git_write_roots(self,worker,project):
+        if any(r in worker['role'].lower() for r in ('audit','architect','review')):return []
+        capabilities=worker.get('capabilities') or []
+        if isinstance(capabilities,str):capabilities=json.loads(capabilities)
+        if 'git-write' not in capabilities:return []
+        workspace=worker.get('workspace') or project['root'];metadata=pathlib.Path(workspace)/'.git'
+        if not metadata.is_dir():
+            raise BridgeError('GIT_WORKSPACE_REQUIRED','git-write needs a normal repository with its own .git directory. Use an integration worker in the approved primary repository; shared worktree metadata is not automatically writable.')
+        path=checked_root(metadata)
+        from .projects import contained,common_git_dir
+        if not contained(path,workspace) or not contained(path,project['root']) or common_git_dir(workspace)!=path_key(path):
+            raise BridgeError('GIT_SCOPE_LOST','Git metadata must belong to this exact approved repository, without an external common directory.')
+        return [str(path)]
 
     def _worker_sandbox(self,worker,project):
         if any(r in worker['role'].lower() for r in ('audit','architect','review')):

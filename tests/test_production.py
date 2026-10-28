@@ -27,6 +27,9 @@ class RecordedTransport:
     def call(self,method,params):
         self.calls.append((method,params))
         if method=='thread/read':return {'thread':self.metadata[params['threadId']]}
+        if method=='thread/resume':
+            self.metadata.setdefault(params['threadId'],{'id':params['threadId'],'cwd':params.get('cwd'),'status':{'type':'idle'}})
+            return {'thread':self.metadata[params['threadId']]}
         if method=='config/read':return {'config':{}}
         if method=='model/list':return {'data':CATALOG,'nextCursor':None}
         if method=='thread/turns/list':return {'data':self.turns,'nextCursor':None}
@@ -53,6 +56,7 @@ class ProductionTests(unittest.TestCase):
             for project in self.roots:
                 for role in ('Developer','Auditor'):
                     tid=str(uuid.uuid4());self.workers[(project,role)]=tid
+                    self.meta[tid]={'id':tid,'cwd':str(self.roots[project]),'status':{'type':'idle'}}
                     db.execute("INSERT INTO conversations(thread_id,project_id,role,name,capabilities,workspace,desktop_sync_state) VALUES(?,?,?,?,'[]',?,'headless')",(tid,project,role,role,str(self.roots[project])))
 
     def test_two_coordinators_have_scoped_status_and_namespaces(self):
@@ -256,6 +260,43 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(rows[0]['desktop_sync_state'],'pending')
         self.assertEqual(invoke(self.b,'project_status',{})['projects'][0]['id'],'beta')
 
+    def test_same_coordinator_refreshes_changed_policy_without_restart(self):
+        old=self.a.rpc;other=self.b.rpc;before=self.b.project_policy.copy()
+        grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],headless=True,integrations=['mcp_servers.example'])
+        with self.assertRaises(BridgeError):invoke(self.a,'project_status',{})
+        result=invoke(self.a,'coordinator_register',{'project_id':'alpha','coordinator_thread_id':self.coordinators['alpha']})
+        self.assertTrue(result['policy_refreshed']);self.assertFalse(result['restart_required'])
+        self.assertTrue(old.closed);self.assertIsNone(self.a._transport)
+        self.assertEqual(json.loads(self.a.project_policy['integrations']),['mcp_servers.example'])
+        self.assertEqual(invoke(self.a,'project_status',{})['projects'][0]['root'],str(self.roots['alpha']))
+        self.assertIs(self.b.rpc,other);self.assertFalse(other.closed);self.assertEqual(before,self.b.project_policy)
+
+    def test_policy_refresh_refuses_pending_work_and_preserves_transport(self):
+        old=self.a.rpc;prior=self.a.project_policy.copy()
+        grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],headless=True,integrations=['mcp_servers.example'])
+        with self.a.registry.connect() as db:
+            db.execute("INSERT INTO messages(key,thread_id,fingerprint,text,state,created,updated) VALUES('pending-refresh',?,'fixture','fixture','unknown',0,0)",(self.workers[('alpha','Developer')],))
+        with self.assertRaisesRegex(BridgeError,'Reconcile'):
+            invoke(self.a,'coordinator_register',{'project_id':'alpha','coordinator_thread_id':self.coordinators['alpha']})
+        self.assertEqual(prior,self.a.project_policy);self.assertIs(self.a._transport,old);self.assertFalse(old.closed)
+
+    def test_revocation_cannot_be_refreshed_but_idle_transport_can_be_released(self):
+        old=self.a.rpc
+        with self.a.registry.connect() as db:db.execute("UPDATE authorizations SET enabled=0 WHERE project_id='alpha'")
+        with self.assertRaises(BridgeError):invoke(self.a,'coordinator_register',{'project_id':'alpha','coordinator_thread_id':self.coordinators['alpha']})
+        self.assertTrue(invoke(self.a,'bridge_release',{})['released']);self.assertTrue(old.closed)
+        self.assertEqual(self.a.registry.one('authorizations','project_id','alpha')['enabled'],0)
+
+    def test_policy_refresh_rejects_foreign_identity_and_moved_native_root(self):
+        old=self.a.rpc
+        grant_project(self.a.registry,'alpha',self.roots['alpha'],self.coordinators['alpha'],headless=True,integrations=['mcp_servers.example'])
+        with self.assertRaisesRegex(BridgeError,'identity cannot change'):
+            invoke(self.a,'coordinator_register',{'project_id':'alpha','coordinator_thread_id':self.coordinators['beta']})
+        self.meta[self.coordinators['alpha']]['cwd']=str(self.roots['beta'])
+        with self.assertRaisesRegex(BridgeError,'moved away'):
+            invoke(self.a,'coordinator_register',{'project_id':'alpha','coordinator_thread_id':self.coordinators['alpha']})
+        self.assertIs(self.a._transport,old);self.assertFalse(old.closed)
+
     def test_overlapping_projects_and_unrelated_workspaces_are_rejected(self):
         nested=self.roots['alpha']/'nested';nested.mkdir()
         with self.assertRaisesRegex(BridgeError,'non-overlapping'):
@@ -291,7 +332,7 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual((result['routing']['model'],result['routing']['effort']),('gpt-6-astra','high'))
         self.a.loaded.add(worker)
         invoke(self.a,'conversation_role',{'thread_id':worker,'role':'Auditor'})
-        self.assertNotIn(worker,self.a.loaded)
+        self.assertIn(worker,self.a.loaded);self.assertIsNone(self.a.loaded_artifacts[worker])
         rpc=self.a.rpc;old=rpc.call
         def call(method,params):
             if method=='thread/resume':

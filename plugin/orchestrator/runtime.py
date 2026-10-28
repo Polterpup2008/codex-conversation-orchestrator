@@ -110,7 +110,7 @@ def add_python_read_execute(base, evidence_dir):
     env.update(ORCH_PYTHON_RX_TARGET=str(base), ORCH_PYTHON_RX_BACKUP=str(backup))
     encoded = base64.b64encode(RX_SCRIPT.encode('utf-16-le')).decode('ascii')
     result = subprocess.run(['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-                            env=env, capture_output=True, text=True, timeout=30,
+                            env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30,
                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     if result.returncode:
         raise BridgeError('RUNTIME_REPAIR_FAILED', 'The narrow RX repair failed under current OS permissions; no elevation or sandbox-policy change was attempted.',

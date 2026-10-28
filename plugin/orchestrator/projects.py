@@ -27,8 +27,14 @@ def contained(path,root):
 
 
 def common_git_dir(path):
-    result=subprocess.run(['git','-C',canonical(path),'rev-parse','--path-format=absolute','--git-common-dir'],
-        capture_output=True,text=True)
+    try:
+        # An inspection child must never inherit the MCP JSON-RPC input pipe.
+        # Windows Git's launcher can keep that pipe open/read from it, hanging
+        # creation until the client disconnects or consuming later requests.
+        result=subprocess.run(['git','-C',canonical(path),'rev-parse','--path-format=absolute','--git-common-dir'],
+            stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=10)
+    except subprocess.TimeoutExpired as exc:
+        raise BridgeError('GIT_INSPECTION_TIMEOUT','Git workspace verification timed out. Verify local Git and reconcile this operation key before retrying; no automatic remote replay was attempted.') from exc
     if result.returncode:
         return None
     return path_key(result.stdout.strip())

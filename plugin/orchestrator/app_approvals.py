@@ -11,7 +11,7 @@ class ApplicationApprovals:
         if not callable(self.native_approval_handler) or not COMPUTER_INTEGRATIONS.intersection(integrations):return 'never'
         return {'granular':{'sandbox_approval':False,'rules':False,'mcp_elicitations':True,'request_permissions':False,'skill_approval':False}}
 
-    def _relay_application_approval(self,params,generation):
+    def _relay_application_approval(self,params,generation,respond=None):
         if self._application_approval_policy()=='never':raise BridgeError('NATIVE_CLIENT_REQUIRED','No native consent client is connected.')
         worker,project=self._worker(params.get('threadId'))
         if worker['role'].lower()=='coordinator' or project['id']!=self.project_scope:
@@ -52,7 +52,15 @@ class ApplicationApprovals:
             with rpc.guard:return self._transport is rpc and not rpc.closed and identity in rpc.active and any(value is params for value in rpc.elicitations.values())
         if not valid():raise BridgeError('NATIVE_APPROVAL_EXPIRED','The original app request expired before relay.')
         result=self.native_approval_handler(request,valid)
-        if not valid():raise BridgeError('NATIVE_APPROVAL_EXPIRED','The native request or grant ended while its client was waiting.')
         if not isinstance(result,dict) or result.get('action') not in ('accept','decline','cancel'):
             raise BridgeError('NATIVE_APPROVAL_INVALID','The native client returned no valid consent response.')
-        return {key:result[key] for key in ('action','content','_meta') if key in result}
+        result={key:result[key] for key in ('action','content','_meta') if key in result}
+        # Only the short final validation/write is fenced. The human wait above
+        # must not block delivery completion or operator grant changes. The DB
+        # write fence serializes those changes; rpc.guard serializes native
+        # resolution/turn updates. Never return an acceptance for a later write.
+        with self.registry.transaction():
+            with rpc.guard:
+                if not valid():raise BridgeError('NATIVE_APPROVAL_EXPIRED','The native request or grant ended while its client was waiting.')
+                if respond is not None:respond(result)
+        return result

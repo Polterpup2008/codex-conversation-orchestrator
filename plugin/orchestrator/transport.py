@@ -268,13 +268,30 @@ class AppServer:
                 self.changed.notify_all()
 
     def _relay_elicitation(self,request_id,params):
-        reason=None
-        try:result=self.on_elicitation(params,self.generation)
-        except Exception as error:result={'action':'decline'};reason=getattr(error,'code',type(error).__name__)
-        with self.guard:
-            if self.closed or self.elicitations.get(request_id) is not params:return
-            try:self._write({'id':request_id,'result':result})
-            finally:self.elicitations.pop(request_id,None)
+        reason=None;written=False
+        def respond(result):
+            nonlocal written
+            with self.guard:
+                if self.closed or self.elicitations.get(request_id) is not params:
+                    raise BridgeError('NATIVE_APPROVAL_EXPIRED','The original native request is no longer pending.')
+                written=True
+                try:self._write({'id':request_id,'result':result})
+                finally:self.elicitations.pop(request_id,None)
+        try:result=self.on_elicitation(params,self.generation,respond)
+        except Exception as error:
+            reason=getattr(error,'code',type(error).__name__)
+            if written:
+                self.on_event('bridge/nativeAppApproval',{'thread_id':params.get('threadId'),'turn_id':params.get('turnId'),'action':'unknown','reason':reason,'decision_source':'native_response_write_uncertain'})
+                return  # The response may have reached native execution. Never send it twice.
+            result={'action':'decline'}
+        if not written:
+            # Only the service may forward a response, inside its live-state
+            # fence. An uncommitted callback result can never grant consent.
+            if result.get('action')=='accept':result={'action':'decline'};reason='NATIVE_APPROVAL_UNCOMMITTED'
+            with self.guard:
+                if self.closed or self.elicitations.get(request_id) is not params:return
+                try:self._write({'id':request_id,'result':result})
+                finally:self.elicitations.pop(request_id,None)
         self.on_event('bridge/nativeAppApproval',{'thread_id':params.get('threadId'),'turn_id':params.get('turnId'),'action':result.get('action'),'reason':reason,'decision_source':'native_client' if reason is None else 'refused_before_execution'})
 
     def has_question(self,request_id,*,generation,thread_id,turn_id,call_id):

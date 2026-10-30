@@ -4,11 +4,14 @@ import subprocess
 import sys
 import unittest
 import uuid
-from unittest.mock import Mock
+import contextlib
+import threading
+from unittest.mock import Mock,patch
 
 import test_artifacts as artifacts
 from orchestrator.authorization import grant_project
 from orchestrator.errors import BridgeError
+from orchestrator.transport import AppServer
 
 
 class NativeApprovalTests(unittest.TestCase):
@@ -83,6 +86,57 @@ class NativeApprovalTests(unittest.TestCase):
         rows=self.a.registry.rows("SELECT payload FROM events WHERE method='bridge/nativeAppApproval'")
         self.assertEqual(json.loads(rows[0]['payload'])['action'],'decline')
         self.assertEqual(self.a.registry.rows('SELECT * FROM questions'),[])
+
+    def relay_fixture(self,rpc):
+        rpc.on_elicitation=self.a._relay_application_approval;rpc.on_event=Mock();rpc._write=Mock()
+        return lambda:AppServer._relay_elicitation(rpc,1,self.params)
+
+    def test_completion_and_revocation_before_final_fence_never_forward_accept(self):
+        rpc=self.prepare();relay=self.relay_fixture(rpc)
+        self.a.native_approval_handler=lambda *_:{'action':'accept'}
+        transaction=self.a.registry.transaction;injected=[]
+        @contextlib.contextmanager
+        def before_final_fence():
+            with transaction() as db:
+                db.execute("UPDATE messages SET state='completed' WHERE key='alpha::native-app'")
+                db.execute("UPDATE authorizations SET enabled=0 WHERE project_id='alpha'")
+            injected.append(True)
+            with transaction() as db:yield db
+        with patch.object(self.a.registry,'transaction',before_final_fence):relay()
+        self.assertEqual(injected,[True])
+        self.assertEqual(rpc._write.call_args.args[0]['result']['action'],'decline')
+        self.assertEqual(rpc._write.call_count,1)
+
+    def test_final_write_is_serialized_with_concurrent_delivery_completion_and_revocation(self):
+        rpc=self.prepare();relay=self.relay_fixture(rpc)
+        self.a.native_approval_handler=lambda *_:{'action':'accept'}
+        entering=threading.Event();started=threading.Event();finished=threading.Event();errors=[];wire=[]
+        def revoke():
+            try:
+                self.assertTrue(entering.wait(5));started.set()
+                with self.a.registry.transaction() as db:
+                    db.execute("UPDATE messages SET state='completed' WHERE key='alpha::native-app'")
+                    db.execute("UPDATE authorizations SET enabled=0 WHERE project_id='alpha'")
+                finished.set()
+            except BaseException as error:errors.append(error)
+        def write(packet):
+            entering.set();self.assertTrue(started.wait(5))
+            self.assertFalse(finished.wait(.15),'Concurrent revocation committed before consent was forwarded')
+            wire.append(packet)
+        rpc._write=write;t=threading.Thread(target=revoke);t.start()
+        try:relay()
+        finally:t.join(timeout=10)
+        self.assertFalse(t.is_alive());self.assertEqual(errors,[]);self.assertTrue(finished.is_set())
+        self.assertEqual(wire[0]['result']['action'],'accept')
+        self.assertFalse(self.a.registry.rows("SELECT * FROM authorizations WHERE project_id='alpha' AND enabled=1"))
+
+    def test_uncertain_wire_write_is_never_replayed(self):
+        rpc=self.prepare();relay=self.relay_fixture(rpc)
+        self.a.native_approval_handler=lambda *_:{'action':'accept'}
+        rpc._write.side_effect=BrokenPipeError('protocol fixture only');relay()
+        self.assertEqual(rpc._write.call_count,1);self.assertNotIn(1,rpc.elicitations)
+        event=rpc.on_event.call_args.args[1]
+        self.assertEqual(event['action'],'unknown');self.assertEqual(event['decision_source'],'native_response_write_uncertain')
 
 
 class NativeMCPRelayTests(unittest.TestCase):

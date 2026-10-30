@@ -33,6 +33,8 @@ Version 0.6.1 repairs a reproduced marketplace-inventory timeout using the nativ
 
 Version 0.6.2 repairs a cross-project race during same-chat bridge handoff and adds the explicit `loopback-net` worker capability for local HTTP tests. See [stabilization and native consent limits](docs/STABILIZATION.md).
 
+Version 0.6.3 adds a scoped relay for genuine Computer Use application-consent forms through the native MCP client. It never approves on a worker's behalf. Terminal-only helpers cannot present this UI. Read [native app consent and connection refresh](docs/NATIVE_APP_CONSENT.md).
+
 Requirements: official Codex CLI 0.164.0+, Python 3.11+, and ChatGPT subscription sign-in for workers. Git is needed to clone and use worktrees. No third-party Python packages or API keys are required.
 
 Version 0.6 Windows worker execution requires native MXC support and fails closed without it. The transport selects MXC only for its own process; saved Windows settings and other active bridges remain unchanged. Read the [Windows requirement and project-only handoff](docs/ARTIFACT_ROOTS.md).

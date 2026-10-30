@@ -357,6 +357,6 @@ class Registry:
                 settings=params['threadSettings']
                 self.routing(row['key'],{'observed_settings':{k:settings.get(k) for k in ['model','effort','cwd','modelProvider']},
                     'observed_source':'thread/settings/updated'})
-        if method in ('turn/started', 'turn/completed', 'thread/settings/updated', 'bridge/unsupportedRequest', 'error'):
+        if method in ('turn/started', 'turn/completed', 'thread/settings/updated', 'bridge/unsupportedRequest', 'bridge/nativeAppApproval', 'error'):
             with self.connect() as db:
                 db.execute('INSERT INTO events(method,payload,created) VALUES(?,?,?)', (method, json.dumps(params), time.time()))

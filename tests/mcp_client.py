@@ -11,7 +11,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class MCPClient:
-    def __init__(self, data_dir=None, server_path=None, extra_env=None):
+    def __init__(self, data_dir=None, server_path=None, extra_env=None, elicitation_handler=None):
         env = os.environ.copy()
         env.update(extra_env or {})
         if data_dir:
@@ -25,12 +25,19 @@ class MCPClient:
         def reader():
             for line in self.process.stdout:
                 packet = json.loads(line)
+                if packet.get('method')=='elicitation/create' and 'id' in packet:
+                    def reply(request):
+                        try:value=elicitation_handler(request['params']) if elicitation_handler else {'action':'decline'}
+                        except Exception:value={'action':'decline'}
+                        with self.lock:
+                            self.process.stdin.write(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':value})+'\n');self.process.stdin.flush()
+                    threading.Thread(target=reply,args=(packet,),daemon=True).start();continue
                 with self.lock:
                     target = self.pending.get(packet.get('id'))
                 if target:
                     target.put(packet)
         self.reader=threading.Thread(target=reader, daemon=True);self.reader.start()
-        self.initialization=self.request('initialize', {'protocolVersion': '2025-03-26', 'clientInfo': {'name': 'experiment', 'version': '1'}, 'capabilities': {}})
+        self.initialization=self.request('initialize', {'protocolVersion': '2025-11-25' if elicitation_handler else '2025-03-26', 'clientInfo': {'name': 'experiment', 'version': '1'}, 'capabilities': {'elicitation':{'form':{}}} if elicitation_handler else {}})
         self.process.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n'); self.process.stdin.flush()
 
     def request(self, method, params, timeout=65):

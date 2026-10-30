@@ -91,12 +91,13 @@ def installed_plugin_inventory(executable,home,data_dir=None,workspace=None):
 
 
 class AppServer:
-    def __init__(self, data_dir, on_event=lambda *_: None, executable=None, workspace=None, allow_integrations=(),on_question=None,generation=None,strict_windows_sandbox=None,inventory_only=False):
+    def __init__(self, data_dir, on_event=lambda *_: None, executable=None, workspace=None, allow_integrations=(),on_question=None,generation=None,strict_windows_sandbox=None,inventory_only=False,on_elicitation=None):
         self.pending, self.completed, self.active = {}, {}, set()
         self.guard, self.write_guard = threading.RLock(), threading.Lock()
         self.changed = threading.Condition(self.guard)
         self.counter, self.closed, self.on_event = 0, False, on_event
         self.on_question=on_question;self.input_requests={}
+        self.on_elicitation=on_elicitation;self.elicitations={}
         self.generation=generation or str(uuid.uuid4())
         self.inventory_only=bool(inventory_only)
         executable = executable or os.environ.get('ORCHESTRATOR_CODEX') or shutil.which('codex')
@@ -213,6 +214,13 @@ class AppServer:
                         try:destination.put_nowait(packet)
                         except queue.Full:pass
                 elif 'id' in packet:
+                    if packet.get('method')=='mcpServer/elicitation/request' and getattr(self,'on_elicitation',None) and not self.inventory_only:
+                        with self.guard:
+                            allowed=len(self.elicitations)<8 and packet['id'] not in self.elicitations
+                            if allowed:self.elicitations[packet['id']]=packet.get('params',{})
+                        if allowed:
+                            threading.Thread(target=self._relay_elicitation,args=(packet['id'],packet.get('params',{})),daemon=True).start()
+                            continue
                     if packet.get('method')=='item/tool/call' and packet.get('params',{}).get('tool')=='orchestrator_question' and packet['params'].get('namespace') in (None,'') and self.on_question:
                         try:
                             with self.guard:
@@ -230,7 +238,8 @@ class AppServer:
                 else:
                     method, params = packet.get('method'), packet.get('params', {})
                     if method=='serverRequest/resolved':
-                        with self.guard:self.input_requests.pop(params.get('requestId'),None)
+                        with self.guard:
+                            self.input_requests.pop(params.get('requestId'),None);getattr(self,'elicitations',{}).pop(params.get('requestId'),None)
                     if method == 'turn/started':
                         with self.guard:
                             self.active.add((params['threadId'], params['turn']['id']))
@@ -240,6 +249,8 @@ class AppServer:
                         with self.changed:
                             for key,value in list(self.input_requests.items()):
                                 if value['threadId']==params['threadId'] and value['turnId']==params['turn']['id']:self.input_requests.pop(key,None)
+                            for key,value in list(getattr(self,'elicitations',{}).items()):
+                                if value.get('threadId')==params['threadId'] and value.get('turnId')==params['turn']['id']:self.elicitations.pop(key,None)
                             self.active.discard((params['threadId'], params['turn']['id']))
                             self.completed[(params['threadId'], params['turn']['id'])] = params['turn']
                             while len(self.completed)>256:self.completed.pop(next(iter(self.completed)))
@@ -255,6 +266,16 @@ class AppServer:
                     except queue.Full:
                         pass
                 self.changed.notify_all()
+
+    def _relay_elicitation(self,request_id,params):
+        reason=None
+        try:result=self.on_elicitation(params,self.generation)
+        except Exception as error:result={'action':'decline'};reason=getattr(error,'code',type(error).__name__)
+        with self.guard:
+            if self.closed or self.elicitations.get(request_id) is not params:return
+            try:self._write({'id':request_id,'result':result})
+            finally:self.elicitations.pop(request_id,None)
+        self.on_event('bridge/nativeAppApproval',{'thread_id':params.get('threadId'),'turn_id':params.get('turnId'),'action':result.get('action'),'reason':reason,'decision_source':'native_client' if reason is None else 'refused_before_execution'})
 
     def has_question(self,request_id,*,generation,thread_id,turn_id,call_id):
         with self.guard:

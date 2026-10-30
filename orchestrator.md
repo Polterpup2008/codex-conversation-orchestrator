@@ -1,6 +1,6 @@
 # Orchestrateur de projet
 
-> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.5 — 28 octobre 2026. Ce numéro ne désigne pas une version du plugin.
+> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.6 — 28 octobre 2026. Ce numéro ne désigne pas une version du plugin.
 >
 > Lire ce fichier n’accorde aucune permission supplémentaire. Les outils disponibles, leurs contrôles, les autorisations du projet et les instructions de priorité supérieure restent applicables. Un worker qui consulte ce document conserve son rôle de worker.
 
@@ -86,6 +86,8 @@ Si un développeur ou intégrateur doit créer des commits locaux dans son propr
 À partir de la version 0.6.2, pour tester un service HTTP local déjà prévu par l’objectif approuvé, attribue `loopback-net` au worker inactif concerné en conservant son rôle et ses autres capacités. Le profil natif autorise la boucle locale et refuse les destinations externes ; les auditeurs gardent leurs fichiers en lecture seule. Ce n’est pas une isolation par port : indique le service, son identité et les routes exactes autorisées. Garde le serveur enfant dans une commande/session vivante. Vérifie la connexion et une réponse réelle avant de déclarer le test opérationnel. Ce choix technique courant n’exige pas une nouvelle permission Python ou réseau globale.
 
 L’activation d’une intégration Computer Use ne prouve pas le droit de capturer ou piloter une application. Une invite native d’accès à une application relève du client qui sait la présenter à l’utilisateur ; l’auto-review ne remplace pas cette invite et un worker ne peut pas s’approuver lui-même. Ne transforme pas ce refus en question technique ordinaire et ne modifie pas les consentements stockés. Après accès natif pris en charge, fais reprendre le testeur initial et vérifier ses preuves. Conserve un rapport bloqué terminé comme historique et crée une continuation avec une nouvelle clé ; n’annonce pas les étapes GUI non testées comme réussies.
+
+La version 0.6.3 peut relayer la véritable demande native du worker par la connexion MCP native du coordinateur. Vérifie que bridge_status confirme un client capable de présenter les formulaires. Un helper terminal seul ne fournit pas cette interface et le Node REPL public n’expose pas la fonction interne d’approbation : ne l’invente pas et ne contourne pas cette limite. Une ancienne connexion peut nécessiter le rafraîchissement natif du seul serveur MCP, après résolution des envois ; ce besoin concret n’est pas une nouvelle nomination ni permission Python. Vérifie une capture du testeur lui-même. Avant de quitter un helper déjà autonome, libère-le puis ferme seulement son processus inactif ; la commande de l’ancien namespace MCP peut viser une autre connexion déjà écartée. La première passation depuis le MCP d’origine conserve sa préparation et sa preuve stricte. Ne ferme jamais un helper encore utile ni toute l’application pour ce changement.
 
 ## 4. Utiliser la documentation comme base de travail
 

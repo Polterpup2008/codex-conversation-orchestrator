@@ -22,6 +22,7 @@ from .questions import QuestionOperations,QUESTION_TOOL
 from .coordination import CoordinationOperations
 from .runtime import RuntimeOperations
 from .artifacts import ArtifactOperations
+from .app_approvals import ApplicationApprovals
 
 TERMINAL = ('completed', 'failed', 'interrupted')
 SOURCES = ['cli', 'vscode', 'exec', 'appServer', 'unknown']
@@ -35,7 +36,7 @@ def identifier(value):
     return value
 
 
-class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOperations,QuestionOperations,CoordinationOperations,RuntimeOperations,ArtifactOperations):
+class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOperations,QuestionOperations,CoordinationOperations,RuntimeOperations,ArtifactOperations,ApplicationApprovals):
     def bridge_status(self):
         from . import __version__
         root=pathlib.Path(__file__).resolve().parents[1]
@@ -59,7 +60,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 'existing_policy_refresh':'coordinator_register with original IDs after project sends resolve; no app restart or second nomination',
                 'git_write_capability':{'name':'git-write','nested_repository':'git-write:RELATIVE_PATH','assignment':'conversation_create or conversation_role capabilities','scope':'normal repository own .git directory only, inside this worker workspace; read-only roles never gain writes; shared worktree metadata is excluded'},
                 'loopback_network_capability':{'name':'loopback-net','assignment':'conversation_create or conversation_role capabilities, preserving other labels, at an idle worker boundary','scope':'native proxied localhost/127.0.0.1; host loopback is not per-port isolation; external networking denied; read-only roles keep read-only files'},
-                'computer_use_approval':'Enabling the integration does not approve a native application. This unattended connection refuses interactive requests; native Computer Use app prompts require the supported human-facing client and are not replaced by auto-review or ordinary question_reply.',
+                'computer_use_approval':{'native_client_connected':callable(self.native_approval_handler),'client_protocol':self.native_client_protocol,'form_capability_advertised':self.native_client_form,'required_client_capability':'MCP elicitation/form','instruction':'Use the native MCP connection for Computer Use consent. The host decides; no auto-accept, ordinary question_reply, hidden Node SDK or shell elevation. A terminal-only helper cannot present this UI and retains never/refusal.'},
                 'writer_conflict_recovery':'WRITER_CONFLICT preserves the original identity and refuses pre-dispatch resume; reconcile pending work, then reuse another suitable project worker or create a successor with explicit handoff.',
                 'windows_worker_backend':'mxc_required_no_legacy_fallback' if os.name=='nt' else 'platform_sandbox',
                 'artifact_operator':{'command':[sys.executable,'-I','-B','-S',str(root/'artifact.py')],
@@ -69,6 +70,8 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                 'note':'This is the version actually serving this MCP connection. Old chats can retain older tool processes. Installation and merely reading a template do not appoint a coordinator.'}
 
     def __init__(self, data_dir=None, transport_factory=AppServer):
+        self.native_approval_handler=None
+        self.native_client_protocol=None;self.native_client_form=False
         self.data_dir = pathlib.Path(data_dir or os.environ.get('ORCHESTRATOR_DATA_DIR') or
             pathlib.Path(os.environ.get('CODEX_HOME', pathlib.Path.home()/'.codex'))/'conversation-orchestrator')
         self.registry = Registry(self.data_dir/'registry.sqlite3')
@@ -107,7 +110,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                     options={'workspace':self._project(self.project_scope)['root'],
                              'allow_integrations':json.loads(self.project_policy['integrations'])}
                 generation=str(uuid.uuid4()) if self.transport_factory is AppServer else None
-                if self.transport_factory is AppServer:options.update(on_question=self._capture_question,generation=generation)
+                if self.transport_factory is AppServer:options.update(on_question=self._capture_question,generation=generation,on_elicitation=self._relay_application_approval if self._application_approval_policy()!='never' else None)
                 self._transport = self.transport_factory(self.data_dir/'logs',lambda method,params:self._event(method,params,generation),**options)
                 self.loaded.clear();self.loaded_artifacts.clear()
             return self._transport
@@ -381,7 +384,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         if any(r in role.lower() for r in ('audit','architect','review')):worker_config['sandbox_workspace_write']['writable_roots']=[]
         permission=self._worker_permissions(candidate_worker,project,worker_config)
         params={
-            'cwd': cwd, 'ephemeral': False, 'approvalPolicy': 'never',
+            'cwd': cwd, 'ephemeral': False, 'approvalPolicy': self._application_approval_policy(),'approvalsReviewer':'user',
             'sandbox': 'read-only' if any(r in role.lower() for r in ('audit','architect','review')) else 'workspace-write', 'modelProvider': 'openai',
             'model':route['model'],'config':worker_config,'allowProviderModelFallback':False,
             'serviceName': 'conversation_orchestrator',
@@ -495,7 +498,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                     rpc.call('thread/unsubscribe',{'threadId':thread_id})
                     self.loaded.discard(thread_id);self.loaded_artifacts.pop(thread_id,None)
                 resume_params={'threadId': thread_id, 'excludeTurns': True,
-                    'cwd':cwd, 'approvalPolicy': 'never',
+                    'cwd':cwd, 'approvalPolicy':self._application_approval_policy(),'approvalsReviewer':'user',
                     'developerInstructions':instructions,
                     'sandbox': 'read-only' if any(r in worker['role'].lower() for r in ('audit','architect','review')) else 'workspace-write', 'modelProvider': 'openai','config':worker_config}
                 if permission:resume_params.pop('sandbox');resume_params['permissions']=permission
@@ -662,10 +665,13 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
         # proves ownership, not the turn's current execution state.
         pending = row['state'] not in TERMINAL
         local_live = False
+        native_approvals=[]
         transport = self._transport
         if transport:
             with transport.guard:
                 local_live = pending and not transport.closed and (row['thread_id'],row['turn_id']) in transport.active
+                if local_live:
+                    native_approvals=[{'app':p.get('_meta',{}).get('tool_params',{}).get('app'),'state':'awaiting_native_client','ordinary_question':False} for p in getattr(transport,'elicitations',{}).values() if p.get('threadId')==row['thread_id'] and p.get('turnId')==row['turn_id']]
         local_owner = pending and not self._closed and (row.get('owner_token') == self.instance or local_live)
         execution_state = row['state'] if not pending else 'in_progress' if local_live else 'owned_elsewhere' if external_owner else 'unresolved'
         outputs = [item['text'] for item in (result or {}).get('items', []) if item.get('type') == 'agentMessage']
@@ -681,6 +687,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
             'owner_bridge_external': external_owner, 'owner_bridge_current': bool(local_owner),
             'turn_observed_live': bool(local_live) if not external_owner else None,
             'execution_state': execution_state,
+            'native_application_approvals':native_approvals,
             'tracking_note': 'notLoaded is observer-local and persisted interrupted can be provisional for an unfinished turn. Use the owning bridge live state; a wait timeout does not stop work or authorize replay.',
             'questions':self.registry.rows("SELECT key,mode,state,payload,task_id FROM questions WHERE message_key=? AND state IN ('pending','escalated','answering')",(message_key,)),
             'task_state': task_state, 'task_verified': task_verified, 'note': 'Turn completion does not imply task acceptance.'}

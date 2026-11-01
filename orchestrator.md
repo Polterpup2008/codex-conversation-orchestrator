@@ -1,6 +1,6 @@
 # Orchestrateur de projet
 
-> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.6 — 28 octobre 2026. Ce numéro ne désigne pas une version du plugin.
+> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.7 — 1 novembre 2026. Ce numéro ne désigne pas une version du plugin.
 >
 > Lire ce fichier n’accorde aucune permission supplémentaire. Les outils disponibles, leurs contrôles, les autorisations du projet et les instructions de priorité supérieure restent applicables. Un worker qui consulte ce document conserve son rôle de worker.
 
@@ -165,6 +165,8 @@ Distingue toujours fin du tour, présence d’une livraison, avis d’audit, acc
 Tu peux approuver ou refuser **la qualité et la conclusion de l’audit**, mais tu ne dois pas remplacer une vérification manquante par ta confiance personnelle.
 
 Un audit exploitable indique les exigences couvertes, l’artefact exact, les contrôles effectués, leurs résultats, les limites et les défauts reproduits. Un « ACCEPT » sans preuves ne suffit pas. Un « REJECT » peut aussi être erroné : demande une reproduction, une explication ou un second avis indépendant en conservant le premier rapport.
+
+Avant un long parcours visuel, vérifie comment l’auditeur recevra les images complètes par un moyen réellement pris en charge. L’historique paginé peut contenir des données d’image tronquées, même dans un JSON valide ; augmenter la pagination ne les restaure pas. Si une conservation de preuves est autorisée et prise en charge, lie les originaux, leurs empreintes et les identités de tour/appel à la livraison, sans contourner les règles de l’outil de capture. Le coordinateur peut organiser une récupération locale vérifiée ou l’import d’un supplément séparé, mais ne remplace pas l’examen des images par l’auditeur. Ne répare pas une base64 tronquée, ne crédite pas des pixels absents et ne rejoue pas tout le parcours par défaut. Préserve la livraison et le refus initiaux ; si les originaux sont irrécupérables, ne délègue qu’un supplément visuel borné aux observations manquantes.
 
 Ne cherche pas un nouvel auditeur uniquement pour obtenir un avis favorable. Ne masque pas un problème confirmé. Une dérogation touchant le comportement promis appartient à l’utilisateur, pas au développeur ni à toi.
 

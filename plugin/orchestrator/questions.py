@@ -5,7 +5,7 @@ from .errors import BridgeError
 from .storage import fingerprint
 
 QUESTION_SCHEMA={'type':'object','properties':{'question':{'type':'string','minLength':1,'maxLength':12000},'category':{'type':'string','enum':['technical','requirement','creative','strategic']},'sources':{'type':'array','items':{'type':'string'},'maxItems':30}},'required':['question','category','sources'],'additionalProperties':False}
-QUESTION_TOOL={'type':'function','name':'orchestrator_question','description':'Ask your designated project coordinator an ordinary technical/requirements/product question and wait for its answer. Never use for permissions, secrets, purchases, security approvals or irreversible actions. If unavailable, return a final ORCHESTRATOR_QUESTION_JSON followed by the same JSON object.','inputSchema':QUESTION_SCHEMA}
+QUESTION_TOOL={'type':'function','name':'orchestrator_question','description':'Ask your designated project coordinator an ordinary technical/requirements/product question and wait for its answer. If a tool wrapper yields a running cell, wait on that original cell until the actual answer returns before finalizing. If unavailable or you must finish without its answer, return a final ORCHESTRATOR_QUESTION_JSON followed by the same JSON object. Never use for permissions, secrets, purchases, security approvals or irreversible actions.','inputSchema':QUESTION_SCHEMA}
 
 
 def checked_question(value):

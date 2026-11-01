@@ -40,3 +40,5 @@ Ne pas recopier les identifiants, tâches ou autorisations d’un autre projet.
 Ce dossier décrit le fonctionnement ; il ne promet pas de tâche en arrière-plan ni de droits que les outils ou le système n’accordent pas.
 
 Pour un audit visuel, prévoir et vérifier la transmission des images complètes avant le parcours : un historique JSON valide peut contenir des images tronquées. Garder les originaux et leurs empreintes par une voie prise en charge ; une récupération ou un supplément reste distinct de la livraison initiale.
+
+Une réponse à une question transmise par le bridge n’est pas un accusé de consommation par le worker. Celui-ci doit récupérer sa cellule d’attente avant de finaliser, ou rendre le fallback de question explicite ; toute continuation après fin du tour respecte l’état et la révision de la tâche.

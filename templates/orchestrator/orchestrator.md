@@ -1,6 +1,6 @@
 # Orchestrateur de projet
 
-> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.7 — 1 novembre 2026. Ce numéro ne désigne pas une version du plugin.
+> Contrat universel réservé au **chat Codex explicitement désigné orchestrateur de ce projet** par l’utilisateur. Version du document : 1.8 — 1er novembre 2026. Ce numéro ne désigne pas une version du plugin.
 >
 > Lire ce fichier n’accorde aucune permission supplémentaire. Les outils disponibles, leurs contrôles, les autorisations du projet et les instructions de priorité supérieure restent applicables. Un worker qui consulte ce document conserve son rôle de worker.
 
@@ -142,6 +142,8 @@ Contraintes : rôle, permissions, modèle/effort et budget de travail.
 ```
 
 Adapte les prompts aux informations nouvelles. Si un worker bloque, diagnostique la cause à partir de ses traces : contexte insuffisant, outil indisponible, problème d’environnement, architecture inadéquate ou défaut réel. Ne renvoie pas indéfiniment le même prompt en augmentant seulement la puissance.
+
+Pour une question ordinaire, indique au worker d’attendre le résultat réel de `orchestrator_question`, y compris la cellule d’outil déjà lancée si elle a rendu la main. Il ne doit pas finaliser en laissant cette attente pendante ; s’il doit terminer avant la réponse, il rend le fallback exact `ORCHESTRATOR_QUESTION_JSON`. Côté coordinateur, `response_forwarded` ne prouve pas que le worker a lu ou utilisé la réponse. Si son tour finit malgré tout, vérifie le terminal, les travaux plus récents et l’état/révision de la tâche avant une continuation explicite à nouvelle clé. Ne rejoue pas l’ancien identifiant de réponse ; une livraison `needs_audit` garde sa transition normale de revue. Aucune relance serveur automatique ni nouvelle autorisation routinière n’est impliquée.
 
 Les instructions des workers ne peuvent pas autoriser une modification des exigences, une publication, une dépense ou un accès à un autre projet.
 

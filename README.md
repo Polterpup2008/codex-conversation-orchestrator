@@ -18,7 +18,7 @@ The coordinator directs the project: it writes task prompts, chooses model capac
 - Controlled worker permissions, integration allowlists, bounded MCP concurrency and local transport logs.
 - Same-owner policy refresh without restarting the app, additive integration-grant updates, and an explicit local `git-write` worker capability.
 - Current registry-derived worker scope appended through the native history API, so reused workers see updated roles/artifact access while prior conversation history is retained.
-- Ordinary worker questions with same-turn replies through a dedicated dynamic tool, plus durable completed-turn continuation for older conversations. Native approvals remain outside this mechanism.
+- Ordinary worker questions with same-turn replies through a dedicated dynamic tool, plus durable completed-turn continuation. A forwarded answer is not a consumption acknowledgment; see [question delivery](docs/QUESTION_DELIVERY.md). Native approvals remain outside this mechanism.
 - Existing-worker expertise/freshness records, hash-bound context handoffs, dependency plans, shared architecture contracts and declared write-conflict checks.
 - Evidence-based audit assessments, including insufficient evidence and disputed reports, while retaining the existing independent acceptance gate.
 - Python/venv preflight under developer and auditor policies, with bounded Windows per-user Python RX repair and unchanged runtime files.

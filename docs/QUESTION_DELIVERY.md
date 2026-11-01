@@ -14,7 +14,7 @@ Wait on the original yielded question cell until its actual result returns befor
 
 If the worker must finish before receiving an ordinary answer, return the exact `ORCHESTRATOR_QUESTION_JSON` terminal fallback rather than burying the question in a completed-delivery summary. The fallback preserves an actionable question and the associated `waiting_input` task state. Never use it for native consent, permissions or security decisions.
 
-Version0.6.4 supplies this distinction in both the worker scope instruction and the dynamic tool description, and corrects the reply-question skill's claim that the entire turn is suspended. These are instruction changes, not a native execution barrier or a promise that a model always follows them.
+Version0.6.4 supplies this distinction in both the worker scope instruction and the dynamic tool description, and corrects the reply-question skill's claim that the entire turn is suspended. Reused workers also receive it in the appended native registry context: updating resume configuration alone does not replace their historical developer message. These are instruction changes, not a native execution barrier or a promise that a model always follows them.
 
 ## Coordinator recovery
 

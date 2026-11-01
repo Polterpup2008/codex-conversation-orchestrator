@@ -522,7 +522,7 @@ class Service(ProjectOperations,ModelOperations,AuthorizationOperations,AuditOpe
                        'network_access':bool(permission),'network_scope':'host_loopback_only' if permission else 'disabled'}
                 scope_text=('Current orchestrator registry scope. This supersedes only earlier orchestrator-generated role/scope summaries for this same worker; it does not appoint a coordinator or override system, host or sandbox policy. '
                             'Read-only roles remain read-only for source and external artifacts. The registered external directories below may be inspected for this project; no new human grant is needed to confirm this existing scope. '
-                            'Use the current assigned task and independent-audit requirements.\n'+json.dumps(scope,sort_keys=True))
+                            'Use the current assigned task and independent-audit requirements. For an ordinary orchestrator_question, wait on its original yielded tool cell until the actual answer returns before finalizing. If you must finish without that answer, return the exact ORCHESTRATOR_QUESTION_JSON terminal fallback with the question/category/sources JSON. This is never a route for native approvals, permissions or secrets.\n'+json.dumps(scope,sort_keys=True))
                 rpc.call('thread/inject_items',{'threadId':thread_id,'items':[{'type':'message','role':'developer','content':[{'type':'input_text','text':scope_text}]}]})
                 self.loaded_artifacts[thread_id]=tuple(artifact_roots)
                 with self.registry.connect() as db:db.execute("DELETE FROM operations WHERE thread_id=? AND owner_token=? AND name='context_refresh'",(thread_id,self.instance))
